@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useState } from 'react'
+import { diffWorkbooks } from '../diff/diffWorkbooks'
 import { cellAddress, parseCellAddress } from '../xlsx/cellRef'
 import type { CellEdit } from '../xlsx/patch'
 import { readWorkbook } from '../xlsx/read'
@@ -63,6 +64,10 @@ export function useWorkbookController() {
   const [edits, setEdits] = useState<Map<string, CellEdit>>(new Map())
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
+  const [compareWorkbook, setCompareWorkbook] = useState<WorkbookModel | null>(null)
+  const [compareFileName, setCompareFileName] = useState<string | null>(null)
+  const [compareLoading, setCompareLoading] = useState(false)
+  const [compareError, setCompareError] = useState<string | null>(null)
 
   const openFile = useCallback(async (nextFile: File) => {
     const lower = nextFile.name.toLowerCase()
@@ -81,6 +86,9 @@ export function useWorkbookController() {
       setEdits(new Map())
       setEditMode(false)
       setSaveError(null)
+      setCompareWorkbook(null)
+      setCompareFileName(null)
+      setCompareError(null)
     } catch {
       setError('파일을 읽지 못했어요. 손상되었거나 지원하지 않는 형식일 수 있어요.')
     } finally {
@@ -96,6 +104,29 @@ export function useWorkbookController() {
     setEdits(new Map())
     setEditMode(false)
     setSaveError(null)
+    setCompareWorkbook(null)
+    setCompareFileName(null)
+    setCompareError(null)
+  }, [])
+
+  const loadCompareFile = useCallback(async (compareCandidate: File) => {
+    setCompareLoading(true)
+    setCompareError(null)
+    try {
+      const model = await readWorkbook(compareCandidate)
+      setCompareWorkbook(model)
+      setCompareFileName(compareCandidate.name)
+    } catch {
+      setCompareError('비교할 파일을 읽지 못했어요.')
+    } finally {
+      setCompareLoading(false)
+    }
+  }, [])
+
+  const clearCompare = useCallback(() => {
+    setCompareWorkbook(null)
+    setCompareFileName(null)
+    setCompareError(null)
   }, [])
 
   const activeSheet = workbook?.sheets[activeSheetIndex] ?? null
@@ -139,6 +170,12 @@ export function useWorkbookController() {
 
   const isDirty = useMemo(() => edits.size > 0, [edits])
 
+  const diff = useMemo(
+    () => (workbook && compareWorkbook ? diffWorkbooks(workbook, compareWorkbook) : null),
+    [workbook, compareWorkbook],
+  )
+  const activeSheetDiff = activeSheet ? (diff?.sheets.get(activeSheet.name) ?? null) : null
+
   return {
     workbook,
     activeSheet,
@@ -156,5 +193,12 @@ export function useWorkbookController() {
     saving,
     saveError,
     saveFile,
+    compareFileName,
+    compareLoading,
+    compareError,
+    loadCompareFile,
+    clearCompare,
+    diff,
+    activeSheetDiff,
   }
 }

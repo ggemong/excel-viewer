@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
+import type { SheetDiff } from '../diff/diffWorkbooks'
 import { cellAddress, columnLetter } from '../xlsx/cellRef'
 import { formatCellValue } from '../xlsx/formatValue'
 import type { CellModel, SheetModel } from '../xlsx/types'
@@ -8,6 +9,7 @@ interface GridCardsProps {
   sheet: SheetModel
   editMode: boolean
   onEditCell: (address: string, rawInput: string) => void
+  diff?: SheetDiff | null
 }
 
 /**
@@ -15,7 +17,7 @@ interface GridCardsProps {
  * 각각 카드 하나로 렌더링한다 — 실사용 데이터 시트 대부분이 헤더 행을
  * 가진다는 가정을 v1 스코프로 채택했다 (구현 계획 참고).
  */
-export function GridCards({ sheet, editMode, onEditCell }: GridCardsProps) {
+export function GridCards({ sheet, editMode, onEditCell, diff }: GridCardsProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const dataRowCount = Math.max(sheet.rowCount - 1, 0)
   const [editingAddress, setEditingAddress] = useState<string | null>(null)
@@ -64,7 +66,9 @@ export function GridCards({ sheet, editMode, onEditCell }: GridCardsProps) {
             >
               {headerLabels.map((label, colIndex) => {
                 const cell = row?.[colIndex]
-                if (!editMode && (!cell || cell.value === null)) return null
+                const cellDiff = diff?.cells[rowNum - 1]?.[colIndex]
+                const hasDiff = cellDiff && cellDiff.status !== 'unchanged'
+                if (!editMode && !hasDiff && (!cell || cell.value === null)) return null
 
                 const address = cellAddress(rowNum, colIndex + 1)
                 const isEditing = editingAddress === address
@@ -94,6 +98,7 @@ export function GridCards({ sheet, editMode, onEditCell }: GridCardsProps) {
                     className="row-card-field"
                     key={colIndex}
                     data-editable={editMode && !cell?.formula}
+                    data-diff={hasDiff ? cellDiff.status : undefined}
                     onClick={() => startEdit(address, cell)}
                   >
                     <span className="row-card-field-label">{label}</span>

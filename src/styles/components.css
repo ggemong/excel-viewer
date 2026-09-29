@@ -42,6 +42,20 @@
 .toolbar-brand { display: flex; align-items: center; gap: var(--sp-2); }
 .toolbar-brand-sub { font-size: var(--fs-xs); color: var(--text-2); font-weight: 500; }
 
+@media (max-width: 768px) {
+  .toolbar {
+    height: auto;
+    min-height: var(--bar-h);
+    flex-wrap: wrap;
+    row-gap: 6px;
+    padding: 8px var(--sp-4);
+  }
+  .toolbar-group {
+    flex-wrap: wrap;
+    row-gap: 6px;
+  }
+}
+
 /* ---------- 배지/필 ---------- */
 .pill {
   display: inline-flex; align-items: center; gap: 6px;
@@ -168,6 +182,30 @@
   font-size: var(--fs-xs);
   color: var(--text-2);
 }
+.grid-selection-bar [data-diff="changed"] {
+  color: var(--accent);
+  font-weight: 700;
+}
+.grid-selection-bar [data-diff="added"] {
+  color: var(--live);
+  font-weight: 700;
+}
+.grid-selection-bar [data-diff="removed"] {
+  color: var(--text-3);
+  font-weight: 700;
+  text-decoration: line-through;
+}
+.grid-cell[data-diff="changed"] {
+  background: var(--accent-soft);
+}
+.grid-cell[data-diff="added"] {
+  background: var(--live-soft);
+}
+.grid-cell[data-diff="removed"] {
+  background: var(--bg-sunk);
+  color: var(--text-3);
+  text-decoration: line-through;
+}
 .grid-cell--input {
   border: none;
   outline: 2px solid var(--accent);
@@ -241,6 +279,22 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.row-card-field[data-diff="changed"] {
+  background: var(--accent-soft);
+  border-radius: var(--r-sm);
+  margin: 0 -6px;
+  padding: 2px 6px;
+}
+.row-card-field[data-diff="added"] {
+  background: var(--live-soft);
+  border-radius: var(--r-sm);
+  margin: 0 -6px;
+  padding: 2px 6px;
+}
+.row-card-field[data-diff="removed"] .row-card-field-value {
+  color: var(--text-3);
+  text-decoration: line-through;
 }
 
 /* ---------- 앱 셸 레이아웃 ---------- */

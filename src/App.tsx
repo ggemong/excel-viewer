@@ -24,6 +24,12 @@ function App() {
     saving,
     saveError,
     saveFile,
+    compareFileName,
+    compareLoading,
+    compareError,
+    loadCompareFile,
+    clearCompare,
+    activeSheetDiff,
   } = useWorkbookController()
   const layout = useResponsiveLayout()
 
@@ -38,6 +44,10 @@ function App() {
         editedCount={editedCount}
         saving={saving}
         onSave={saveFile}
+        compareFileName={compareFileName}
+        compareLoading={compareLoading}
+        onPickCompareFile={loadCompareFile}
+        onClearCompare={clearCompare}
       />
 
       {!workbook || !activeSheet ? (
@@ -45,15 +55,15 @@ function App() {
       ) : (
         <>
           <SummaryBar sheet={activeSheet} />
-          {saveError && (
+          {(saveError || compareError) && (
             <div className="summary-bar" style={{ background: 'var(--accent-soft)', color: 'var(--accent)' }}>
-              {saveError}
+              {saveError ?? compareError}
             </div>
           )}
           {layout === 'mobile' ? (
-            <GridCards sheet={activeSheet} editMode={editMode} onEditCell={editCell} />
+            <GridCards sheet={activeSheet} editMode={editMode} onEditCell={editCell} diff={activeSheetDiff} />
           ) : (
-            <Grid sheet={activeSheet} editMode={editMode} onEditCell={editCell} />
+            <Grid sheet={activeSheet} editMode={editMode} onEditCell={editCell} diff={activeSheetDiff} />
           )}
           {workbook.sheets.length > 1 && (
             <div className="sheet-tabs">

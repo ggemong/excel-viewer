@@ -2,6 +2,7 @@ import { useRef, useState } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { normalizeRange, type CellRange } from '../clipboard/buildClipboardPayload'
 import { useClipboardCopy } from '../clipboard/useClipboardCopy'
+import type { SheetDiff } from '../diff/diffWorkbooks'
 import { cellAddress, columnLetter } from '../xlsx/cellRef'
 import { formatCellValue } from '../xlsx/formatValue'
 import type { CellModel, SheetModel } from '../xlsx/types'
@@ -15,6 +16,7 @@ interface GridProps {
   sheet: SheetModel
   editMode: boolean
   onEditCell: (address: string, rawInput: string) => void
+  diff?: SheetDiff | null
 }
 
 function inRange(range: CellRange | null, row: number, col: number): boolean {
@@ -26,7 +28,7 @@ function inRange(range: CellRange | null, row: number, col: number): boolean {
  * 파일에서 병목은 열 수가 아니라 행 수라서, 행 가상화만으로 대용량 파일의
  * 스크롤 성능 문제를 해결한다. 열이 극단적으로 많은 시트는 이후 확장 대상.
  */
-export function Grid({ sheet, editMode, onEditCell }: GridProps) {
+export function Grid({ sheet, editMode, onEditCell, diff }: GridProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const [editingAddress, setEditingAddress] = useState<string | null>(null)
   const [draft, setDraft] = useState('')
@@ -72,6 +74,13 @@ export function Grid({ sheet, editMode, onEditCell }: GridProps) {
 
   return (
     <div className="grid-card">
+      {diff && (diff.changedCount > 0 || diff.addedCount > 0 || diff.removedCount > 0) && (
+        <div className="grid-selection-bar" style={{ left: 8, right: 'auto' }}>
+          <span data-diff="changed">변경 {diff.changedCount}</span>
+          <span data-diff="added">추가 {diff.addedCount}</span>
+          <span data-diff="removed">삭제 {diff.removedCount}</span>
+        </div>
+      )}
       {selection && (
         <div className="grid-selection-bar">
           <span>
@@ -127,6 +136,13 @@ export function Grid({ sheet, editMode, onEditCell }: GridProps) {
                   const isNumeric = typeof cell?.value === 'number'
                   const isFormula = Boolean(cell?.formula)
                   const isEditing = editingAddress === address
+                  const cellDiff = diff?.cells[rowNum - 1]?.[colIndex]
+                  const diffTitle =
+                    cellDiff?.status === 'changed'
+                      ? `비교 파일 값: ${cellDiff.oldValue ?? '(없음)'}`
+                      : cellDiff?.status === 'removed'
+                        ? `비교 파일에만 있던 값: ${cellDiff.oldValue}`
+                        : undefined
 
                   if (isEditing) {
                     return (
@@ -152,7 +168,8 @@ export function Grid({ sheet, editMode, onEditCell }: GridProps) {
                       data-editable={editMode && !isFormula}
                       data-readonly={editMode && isFormula}
                       data-selected={inRange(selection, rowNum, col)}
-                      title={isFormula ? '수식 셀은 이 버전에서 수정할 수 없어요' : undefined}
+                      data-diff={cellDiff && cellDiff.status !== 'unchanged' ? cellDiff.status : undefined}
+                      title={diffTitle ?? (isFormula ? '수식 셀은 이 버전에서 수정할 수 없어요' : undefined)}
                       style={{ justifyContent: isNumeric ? 'flex-end' : 'flex-start' }}
                       onClick={(e) => {
                         selectCell(rowNum, col, e.shiftKey)
