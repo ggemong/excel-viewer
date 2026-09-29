@@ -1,5 +1,7 @@
 import { useRef, useState } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
+import { normalizeRange, type CellRange } from '../clipboard/buildClipboardPayload'
+import { useClipboardCopy } from '../clipboard/useClipboardCopy'
 import { cellAddress, columnLetter } from '../xlsx/cellRef'
 import { formatCellValue } from '../xlsx/formatValue'
 import type { CellModel, SheetModel } from '../xlsx/types'
@@ -15,6 +17,10 @@ interface GridProps {
   onEditCell: (address: string, rawInput: string) => void
 }
 
+function inRange(range: CellRange | null, row: number, col: number): boolean {
+  return !!range && row >= range.r0 && row <= range.r1 && col >= range.c0 && col <= range.c1
+}
+
 /**
  * 데스크톱 가상 스크롤 그리드. 행만 가상화한다(v1 스코프) — 대부분의 실사용
  * 파일에서 병목은 열 수가 아니라 행 수라서, 행 가상화만으로 대용량 파일의
@@ -24,6 +30,9 @@ export function Grid({ sheet, editMode, onEditCell }: GridProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const [editingAddress, setEditingAddress] = useState<string | null>(null)
   const [draft, setDraft] = useState('')
+  const [anchor, setAnchor] = useState<{ row: number; col: number } | null>(null)
+  const [focus, setFocus] = useState<{ row: number; col: number } | null>(null)
+  const { copyRange, copied } = useClipboardCopy()
 
   const rowVirtualizer = useVirtualizer({
     count: sheet.rowCount,
@@ -33,6 +42,16 @@ export function Grid({ sheet, editMode, onEditCell }: GridProps) {
   })
 
   const gridTemplateColumns = `${ROW_NUM_WIDTH}px repeat(${sheet.colCount}, ${COL_WIDTH}px)`
+  const selection = anchor && focus ? normalizeRange(anchor, focus) : null
+
+  const selectCell = (row: number, col: number, extend: boolean) => {
+    if (extend && anchor) {
+      setFocus({ row, col })
+    } else {
+      setAnchor({ row, col })
+      setFocus({ row, col })
+    }
+  }
 
   const startEdit = (address: string, cell: CellModel | undefined) => {
     if (!editMode || cell?.formula) return
@@ -47,9 +66,33 @@ export function Grid({ sheet, editMode, onEditCell }: GridProps) {
 
   const cancelEdit = () => setEditingAddress(null)
 
+  const handleCopy = () => {
+    if (selection) void copyRange(sheet, selection)
+  }
+
   return (
     <div className="grid-card">
-      <div className="grid-scroll" ref={scrollRef}>
+      {selection && (
+        <div className="grid-selection-bar">
+          <span>
+            {cellAddress(selection.r0, selection.c0)}:{cellAddress(selection.r1, selection.c1)} 선택됨
+          </span>
+          <button type="button" className="btn btn--ghost" onClick={handleCopy}>
+            {copied ? '복사됨' : '복사'}
+          </button>
+        </div>
+      )}
+      <div
+        className="grid-scroll"
+        ref={scrollRef}
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if ((e.ctrlKey || e.metaKey) && e.key === 'c' && selection) {
+            e.preventDefault()
+            handleCopy()
+          }
+        }}
+      >
         <div style={{ display: 'grid', gridTemplateColumns, position: 'sticky', top: 0, zIndex: 2 }}>
           <div className="grid-cell grid-cell--colhead" style={{ height: HEADER_HEIGHT }} />
           {Array.from({ length: sheet.colCount }, (_, i) => (
@@ -78,8 +121,9 @@ export function Grid({ sheet, editMode, onEditCell }: GridProps) {
               >
                 <div className="grid-cell grid-cell--rownum">{rowNum}</div>
                 {Array.from({ length: sheet.colCount }, (_, colIndex) => {
+                  const col = colIndex + 1
                   const cell = row?.[colIndex]
-                  const address = cellAddress(rowNum, colIndex + 1)
+                  const address = cellAddress(rowNum, col)
                   const isNumeric = typeof cell?.value === 'number'
                   const isFormula = Boolean(cell?.formula)
                   const isEditing = editingAddress === address
@@ -107,9 +151,13 @@ export function Grid({ sheet, editMode, onEditCell }: GridProps) {
                       className="grid-cell"
                       data-editable={editMode && !isFormula}
                       data-readonly={editMode && isFormula}
+                      data-selected={inRange(selection, rowNum, col)}
                       title={isFormula ? '수식 셀은 이 버전에서 수정할 수 없어요' : undefined}
                       style={{ justifyContent: isNumeric ? 'flex-end' : 'flex-start' }}
-                      onClick={() => startEdit(address, cell)}
+                      onClick={(e) => {
+                        selectCell(rowNum, col, e.shiftKey)
+                        if (!e.shiftKey) startEdit(address, cell)
+                      }}
                     >
                       {formatCellValue(cell)}
                     </div>

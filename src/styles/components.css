@@ -94,6 +94,7 @@
 
 /* ---------- 그리드 (데스크톱) ---------- */
 .grid-card {
+  position: relative;
   flex-grow: 1;
   min-height: 0;
   background: var(--bg-elev);
@@ -108,6 +109,7 @@
   overflow: auto;
 }
 .grid-cell {
+  user-select: none;
   height: 34px;
   display: flex;
   align-items: center;
@@ -145,6 +147,26 @@
   cursor: not-allowed;
   color: var(--text-3);
   font-style: italic;
+}
+.grid-cell[data-selected="true"] {
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.grid-selection-bar {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 4px 6px 4px 12px;
+  border-radius: var(--r-pill);
+  background: var(--bg-elev);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-1);
+  font-size: var(--fs-xs);
+  color: var(--text-2);
 }
 .grid-cell--input {
   border: none;
