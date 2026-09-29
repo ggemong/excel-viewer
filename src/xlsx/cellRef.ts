@@ -1,7 +1,4 @@
-/**
- * A1 표기 <-> 0-based {row, col} 변환. 저장 경로(patch.ts)의 공유 수식
- * 마스터 판별에도 이 모듈을 그대로 재사용한다.
- */
+/** A1 표기 <-> 1-based {row, col} 변환. 읽기 경로(read.ts/grid)와 저장 경로(patch.ts)가 같이 쓴다. */
 
 export function columnLetter(oneBasedCol: number): string {
   let s = ''
@@ -16,4 +13,15 @@ export function columnLetter(oneBasedCol: number): string {
 
 export function cellAddress(oneBasedRow: number, oneBasedCol: number): string {
   return `${columnLetter(oneBasedCol)}${oneBasedRow}`
+}
+
+export function parseCellAddress(address: string): { row: number; col: number } {
+  const match = address.match(/^([A-Z]+)(\d+)$/)
+  if (!match) throw new Error(`셀 주소가 이상해요: ${address}`)
+  const [, colLetters, rowDigits] = match
+  let col = 0
+  for (const ch of colLetters) {
+    col = col * 26 + (ch.charCodeAt(0) - 64)
+  }
+  return { row: Number(rowDigits), col }
 }
