@@ -1,5 +1,6 @@
 import { parseCellAddress } from './cellRef'
 import { compressEntry, decompressEntry } from './deflate'
+import { findMergeAt, isMergeMaster, type MergeRange } from './mergeRange'
 import { buildZip, parseZip, type ZipEntry } from './zip'
 
 const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
@@ -94,9 +95,10 @@ function patchSheetEntry(entry: ZipEntry, edits: CellEdit[]): ZipEntry {
   if (!sheetData) {
     throw new Error('시트 XML에 <sheetData>가 없어요.')
   }
+  const mergeRanges = parseMergeRangesFromDoc(doc)
 
   for (const edit of edits) {
-    applyEdit(doc, sheetData, edit)
+    applyEdit(doc, sheetData, edit, mergeRanges)
   }
 
   const serialized = decl + new XMLSerializer().serializeToString(doc.documentElement)
@@ -106,8 +108,32 @@ function patchSheetEntry(entry: ZipEntry, edits: CellEdit[]): ZipEntry {
   return { ...entry, data, crc32, compressedSize, uncompressedSize }
 }
 
-function applyEdit(doc: Document, sheetData: Element, edit: CellEdit) {
+function parseMergeRangesFromDoc(doc: Document): MergeRange[] {
+  const ranges: MergeRange[] = []
+  for (const mergeCell of Array.from(doc.getElementsByTagName('mergeCell'))) {
+    const ref = mergeCell.getAttribute('ref')
+    if (!ref) continue
+    const [a, b] = ref.split(':')
+    const pa = parseCellAddress(a)
+    const pb = parseCellAddress(b ?? a)
+    ranges.push({
+      r0: Math.min(pa.row, pb.row),
+      c0: Math.min(pa.col, pb.col),
+      r1: Math.max(pa.row, pb.row),
+      c1: Math.max(pa.col, pb.col),
+    })
+  }
+  return ranges
+}
+
+function applyEdit(doc: Document, sheetData: Element, edit: CellEdit, mergeRanges: MergeRange[]) {
   const { row: rowNum, col: colNum } = parseCellAddress(edit.address)
+
+  const merge = findMergeAt(mergeRanges, rowNum, colNum)
+  if (merge && !isMergeMaster(merge, rowNum, colNum)) {
+    throw new Error(`${edit.address} 셀은 병합된 셀이에요 — 왼쪽 위 기준 셀에서 수정하세요.`)
+  }
+
   const row = findOrInsertRow(doc, sheetData, rowNum)
 
   const existingCell = findCell(row, edit.address)

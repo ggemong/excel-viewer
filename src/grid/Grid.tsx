@@ -1,8 +1,9 @@
-import { useRef, useState } from 'react'
+import { useRef, useState, type ReactNode } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { normalizeRange, type CellRange } from '../clipboard/buildClipboardPayload'
 import { useClipboardCopy } from '../clipboard/useClipboardCopy'
 import type { SheetDiff } from '../diff/diffWorkbooks'
+import { isMergeMaster, useMergeLookup } from './useMergeLookup'
 import { cellAddress, columnLetter } from '../xlsx/cellRef'
 import { formatCellValue } from '../xlsx/formatValue'
 import type { CellModel, SheetModel } from '../xlsx/types'
@@ -35,6 +36,7 @@ export function Grid({ sheet, editMode, onEditCell, diff }: GridProps) {
   const [anchor, setAnchor] = useState<{ row: number; col: number } | null>(null)
   const [focus, setFocus] = useState<{ row: number; col: number } | null>(null)
   const { copyRange, copied } = useClipboardCopy()
+  const mergeLookup = useMergeLookup(sheet.merges)
 
   const rowVirtualizer = useVirtualizer({
     count: sheet.rowCount,
@@ -129,57 +131,93 @@ export function Grid({ sheet, editMode, onEditCell, diff }: GridProps) {
                 }}
               >
                 <div className="grid-cell grid-cell--rownum">{rowNum}</div>
-                {Array.from({ length: sheet.colCount }, (_, colIndex) => {
-                  const col = colIndex + 1
-                  const cell = row?.[colIndex]
-                  const address = cellAddress(rowNum, col)
-                  const isNumeric = typeof cell?.value === 'number'
-                  const isFormula = Boolean(cell?.formula)
-                  const isEditing = editingAddress === address
-                  const cellDiff = diff?.cells[rowNum - 1]?.[colIndex]
-                  const diffTitle =
-                    cellDiff?.status === 'changed'
-                      ? `비교 파일 값: ${cellDiff.oldValue ?? '(없음)'}`
-                      : cellDiff?.status === 'removed'
-                        ? `비교 파일에만 있던 값: ${cellDiff.oldValue}`
-                        : undefined
+                {(() => {
+                  const cells: ReactNode[] = []
+                  let colIndex = 0
+                  while (colIndex < sheet.colCount) {
+                    const col = colIndex + 1
+                    const merge = mergeLookup.get(`${rowNum},${col}`)
 
-                  if (isEditing) {
-                    return (
-                      <input
-                        key={colIndex}
-                        className="grid-cell grid-cell--input"
-                        autoFocus
-                        value={draft}
-                        onChange={(e) => setDraft(e.target.value)}
-                        onBlur={commitEdit}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') commitEdit()
-                          else if (e.key === 'Escape') cancelEdit()
-                        }}
-                      />
-                    )
+                    // 병합 범위에 덮여있지만 이 칸이 마스터(왼쪽 위)가 아니면: 값을
+                    // 중복으로 찍지 않고 빈 칸으로만 렌더링한다(세로 병합은 열
+                    // 스팬만으로는 시각적으로 못 이어붙이므로 v1은 이 정도로 절충).
+                    if (merge && !isMergeMaster(merge, rowNum, col)) {
+                      cells.push(
+                        <div
+                          key={colIndex}
+                          className="grid-cell"
+                          data-merged="true"
+                          title="병합된 셀이에요 — 왼쪽 위 셀에서 값을 확인/수정하세요"
+                        />,
+                      )
+                      colIndex++
+                      continue
+                    }
+
+                    const colSpan = merge ? merge.c1 - merge.c0 + 1 : 1
+                    const cell = row?.[colIndex]
+                    const address = cellAddress(rowNum, col)
+                    const isNumeric = typeof cell?.value === 'number'
+                    const isFormula = Boolean(cell?.formula)
+                    const isEditing = editingAddress === address
+                    const cellDiff = diff?.cells[rowNum - 1]?.[colIndex]
+                    const diffTitle =
+                      cellDiff?.status === 'changed'
+                        ? `비교 파일 값: ${cellDiff.oldValue ?? '(없음)'}`
+                        : cellDiff?.status === 'removed'
+                          ? `비교 파일에만 있던 값: ${cellDiff.oldValue}`
+                          : undefined
+
+                    if (isEditing) {
+                      cells.push(
+                        <input
+                          key={colIndex}
+                          className="grid-cell grid-cell--input"
+                          autoFocus
+                          value={draft}
+                          onChange={(e) => setDraft(e.target.value)}
+                          onBlur={commitEdit}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') commitEdit()
+                            else if (e.key === 'Escape') cancelEdit()
+                          }}
+                        />,
+                      )
+                    } else {
+                      cells.push(
+                        <div
+                          key={colIndex}
+                          className="grid-cell"
+                          data-editable={editMode && !isFormula && !merge}
+                          data-readonly={editMode && (isFormula || Boolean(merge))}
+                          data-selected={inRange(selection, rowNum, col)}
+                          data-diff={cellDiff && cellDiff.status !== 'unchanged' ? cellDiff.status : undefined}
+                          title={
+                            diffTitle ??
+                            (isFormula
+                              ? '수식 셀은 이 버전에서 수정할 수 없어요'
+                              : merge
+                                ? '병합된 셀은 이 버전에서 수정할 수 없어요'
+                                : undefined)
+                          }
+                          style={{
+                            justifyContent: isNumeric ? 'flex-end' : 'flex-start',
+                            gridColumn: colSpan > 1 ? `span ${colSpan}` : undefined,
+                          }}
+                          onClick={(e) => {
+                            selectCell(rowNum, col, e.shiftKey)
+                            if (!e.shiftKey && !merge) startEdit(address, cell)
+                          }}
+                        >
+                          {formatCellValue(cell)}
+                        </div>,
+                      )
+                    }
+
+                    colIndex += colSpan
                   }
-
-                  return (
-                    <div
-                      key={colIndex}
-                      className="grid-cell"
-                      data-editable={editMode && !isFormula}
-                      data-readonly={editMode && isFormula}
-                      data-selected={inRange(selection, rowNum, col)}
-                      data-diff={cellDiff && cellDiff.status !== 'unchanged' ? cellDiff.status : undefined}
-                      title={diffTitle ?? (isFormula ? '수식 셀은 이 버전에서 수정할 수 없어요' : undefined)}
-                      style={{ justifyContent: isNumeric ? 'flex-end' : 'flex-start' }}
-                      onClick={(e) => {
-                        selectCell(rowNum, col, e.shiftKey)
-                        if (!e.shiftKey) startEdit(address, cell)
-                      }}
-                    >
-                      {formatCellValue(cell)}
-                    </div>
-                  )
-                })}
+                  return cells
+                })()}
               </div>
             )
           })}

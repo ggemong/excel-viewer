@@ -157,6 +157,10 @@
   outline: 1px solid var(--accent);
   outline-offset: -1px;
 }
+.grid-cell[data-merged="true"] {
+  background: var(--bg-sunk);
+  pointer-events: none;
+}
 .grid-cell[data-readonly="true"] {
   cursor: not-allowed;
   color: var(--text-3);

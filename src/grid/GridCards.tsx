@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import type { SheetDiff } from '../diff/diffWorkbooks'
+import { isMergeMaster, useMergeLookup } from './useMergeLookup'
 import { cellAddress, columnLetter } from '../xlsx/cellRef'
 import { formatCellValue } from '../xlsx/formatValue'
 import type { CellModel, SheetModel } from '../xlsx/types'
@@ -22,6 +23,7 @@ export function GridCards({ sheet, editMode, onEditCell, diff }: GridCardsProps)
   const dataRowCount = Math.max(sheet.rowCount - 1, 0)
   const [editingAddress, setEditingAddress] = useState<string | null>(null)
   const [draft, setDraft] = useState('')
+  const mergeLookup = useMergeLookup(sheet.merges)
 
   const headerLabels = Array.from({ length: sheet.colCount }, (_, i) => {
     const label = formatCellValue(sheet.rows[0]?.[i])
@@ -35,8 +37,8 @@ export function GridCards({ sheet, editMode, onEditCell, diff }: GridCardsProps)
     overscan: 8,
   })
 
-  const startEdit = (address: string, cell: CellModel | undefined) => {
-    if (!editMode || cell?.formula) return
+  const startEdit = (address: string, cell: CellModel | undefined, merged: boolean) => {
+    if (!editMode || cell?.formula || merged) return
     setEditingAddress(address)
     setDraft(cell && cell.value !== null ? String(cell.value) : '')
   }
@@ -65,12 +67,19 @@ export function GridCards({ sheet, editMode, onEditCell, diff }: GridCardsProps)
               }}
             >
               {headerLabels.map((label, colIndex) => {
+                const col = colIndex + 1
+                const merge = mergeLookup.get(`${rowNum},${col}`)
+                // 병합 범위에서 마스터(왼쪽 위)가 아닌 칸은 카드에 아예 안 보여준다 —
+                // ExcelJS가 마스터 값을 나머지 칸에도 그대로 돌려줘서, 안 걸러내면
+                // 같은 값이 필드마다 중복으로 찍힌다.
+                if (merge && !isMergeMaster(merge, rowNum, col)) return null
+
                 const cell = row?.[colIndex]
                 const cellDiff = diff?.cells[rowNum - 1]?.[colIndex]
                 const hasDiff = cellDiff && cellDiff.status !== 'unchanged'
                 if (!editMode && !hasDiff && (!cell || cell.value === null)) return null
 
-                const address = cellAddress(rowNum, colIndex + 1)
+                const address = cellAddress(rowNum, col)
                 const isEditing = editingAddress === address
 
                 if (isEditing) {
@@ -97,11 +106,15 @@ export function GridCards({ sheet, editMode, onEditCell, diff }: GridCardsProps)
                   <div
                     className="row-card-field"
                     key={colIndex}
-                    data-editable={editMode && !cell?.formula}
+                    data-editable={editMode && !cell?.formula && !merge}
                     data-diff={hasDiff ? cellDiff.status : undefined}
-                    onClick={() => startEdit(address, cell)}
+                    title={merge ? '병합된 셀은 이 버전에서 수정할 수 없어요' : undefined}
+                    onClick={() => startEdit(address, cell, Boolean(merge))}
                   >
-                    <span className="row-card-field-label">{label}</span>
+                    <span className="row-card-field-label">
+                      {label}
+                      {merge && merge.c1 > merge.c0 ? ` (${merge.c1 - merge.c0 + 1}칸 병합)` : ''}
+                    </span>
                     <span className="row-card-field-value">{formatCellValue(cell) || (editMode ? '—' : '')}</span>
                   </div>
                 )

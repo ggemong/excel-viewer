@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState } from 'react'
 import { diffWorkbooks } from '../diff/diffWorkbooks'
 import { cellAddress, parseCellAddress } from '../xlsx/cellRef'
+import { findMergeAt, isMergeMaster, parseMergeRanges } from '../xlsx/mergeRange'
 import type { CellEdit } from '../xlsx/patch'
 import { readWorkbook } from '../xlsx/read'
 import type { WorkbookModel } from '../xlsx/types'
@@ -138,6 +139,11 @@ export function useWorkbookController() {
       const existing = activeSheet.rows[row - 1]?.[col - 1]
       if (existing?.formula) {
         setSaveError(`${address} 셀은 수식이 있어서 수정할 수 없어요.`)
+        return
+      }
+      const merge = findMergeAt(parseMergeRanges(activeSheet.merges), row, col)
+      if (merge && !isMergeMaster(merge, row, col)) {
+        setSaveError(`${address} 셀은 병합된 셀이에요 — 왼쪽 위 기준 셀에서 수정하세요.`)
         return
       }
 

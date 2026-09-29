@@ -39,13 +39,7 @@ async function readXlsx(file: File): Promise<WorkbookModel> {
       rows.push(rowCells)
     }
 
-    const merges: string[] = []
-    const modelAny = worksheet as unknown as { _merges?: Record<string, { model: { range: string } }> }
-    if (modelAny._merges) {
-      for (const key of Object.keys(modelAny._merges)) {
-        merges.push(modelAny._merges[key].model.range)
-      }
-    }
+    const merges = worksheet.model.merges ?? []
 
     sheets.push({
       name: worksheet.name,

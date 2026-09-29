@@ -63,6 +63,20 @@ describe('patchWorkbook', () => {
     await expect(patchWorkbook(file, [{ sheetName: 'Data', address: 'B3', newValue: 999 }])).rejects.toThrow()
   })
 
+  it('병합 범위의 마스터가 아닌 셀은 수정을 거부한다', async () => {
+    const file = loadFixtureFile()
+    await expect(patchWorkbook(file, [{ sheetName: 'Data', address: 'B6', newValue: 'nope' }])).rejects.toThrow()
+  })
+
+  it('병합 범위의 마스터 셀은 정상적으로 수정된다', async () => {
+    const file = loadFixtureFile()
+    const blob = await patchWorkbook(file, [{ sheetName: 'Data', address: 'A6', newValue: 'Updated banner' }])
+    const wb = await readBack(blob)
+    const ws = wb.getWorksheet('Data')!
+    expect(ws.getCell('A6').value).toBe('Updated banner')
+    expect(ws.model.merges).toContain('A6:B6')
+  })
+
   it('수정한 셀이 든 시트 XML 말고는 모든 zip 항목이 바이트 단위로 원본과 동일하다', async () => {
     const file = loadFixtureFile()
     const originalBuffer = await file.arrayBuffer()
