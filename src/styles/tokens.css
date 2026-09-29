@@ -1,0 +1,78 @@
+/* =========================================================================
+   withvibe 디자인 토큰 (v3) — 원본: design/v3/assets/withvibe.css 1~3장 (D-023, D-024)
+
+   ★ 색 "값"은 시안과 한 글자도 다르지 않다. 다른 점은 적는 방식뿐이다:
+     시안은 다크 값을 두 번(속성 선택자 + 미디어 쿼리) 적었고, 여기서는 CSS
+     `light-dark(라이트, 다크)`로 한 번만 적는다(D-024 1번). 한쪽만 고치는 실수를 막기 위해서다.
+     시안과 값이 같은지는 src/styles/tokens.test.ts가 매번 확인한다.
+
+   테마 전환 방식(color-scheme이 light-dark()의 어느 쪽을 쓸지 정한다):
+     - 기본(자동): `light dark` → 휴대폰·PC 설정을 따른다.
+     - 수동: <html data-theme="light|dark"> → BaseLayout <head>의 스크립트가 화면을 그리기 전에
+       붙인다(첫 화면 깜빡임 방지). 저장 키는 src/config/site.ts THEME_STORAGE_KEY.
+
+   light-dark()를 쓸 수 없는 값(그림자처럼 색이 아닌 값)은 "라이트용 층 + 다크용 층"을 모두
+   적고, 쓰지 않는 쪽 색을 transparent로 둔다. 화면에 보이는 결과는 시안과 같다.
+   ========================================================================= */
+
+:root {
+  color-scheme: light dark;
+}
+:root[data-theme='light'] { color-scheme: light; }
+:root[data-theme='dark'] { color-scheme: dark; }
+
+/* ---------- 색 (라이트, 다크) ---------- */
+:root {
+  --bg: light-dark(#FAF8F5, #141211);
+  --bg-elev: light-dark(#FFFFFF, #1D1A18);
+  --bg-sunk: light-dark(#F2EEE9, #0E0C0B);
+  --line: light-dark(#E8E2DB, #2D2926);
+  --line-strong: light-dark(#D5CCC3, #3F3A36);
+  --text: light-dark(#1E1A17, #F3EEE9);
+  --text-2: light-dark(#57504A, #C3B9B2);
+  --text-3: light-dark(#736962, #9B918A);
+  --accent: light-dark(#8C5A50, #E8B6AA);        /* 타이가 이마 줄무늬에서 */
+  --accent-hover: light-dark(#74473F, #F3CBC2);
+  --accent-soft: light-dark(#F4E7E3, #33241F);
+  --on-accent: light-dark(#FFFFFF, #1E1512);
+  --stripe: light-dark(#93665E, #B98A80);        /* 워드마크 줄무늬 */
+  --blush: light-dark(#F9CAD7, #F4B9C9);         /* 타이가 볼 */
+  --lamp: light-dark(#F4E1DA, #EADAD3);          /* 타이가 뒤 원 — 다크에서는 '불 켜진 창' */
+  --live: light-dark(#2B7553, #72CC9E);
+  --live-soft: light-dark(#E2F0E8, #15271E);
+  --soon: light-dark(#8A7F77, #8E847D);
+  --scrim: light-dark(rgba(30, 26, 23, .42), rgba(0, 0, 0, .58));
+  --ad-bg: light-dark(#F1ECE6, #1A1715);
+
+  /* 그림자 — 라이트: 두 겹 그림자 / 다크: 1px 옅은 테두리. (시안 --shadow-1) */
+  --shadow-1:
+    0 1px 2px light-dark(rgba(31, 26, 23, .05), transparent),
+    0 6px 20px light-dark(rgba(31, 26, 23, .06), transparent),
+    0 0 0 1px light-dark(transparent, rgba(255, 255, 255, .02));
+  /* 서랍 그림자 — 라이트 0 12px 40px / 다크 0 16px 48px. (시안 --shadow-2) */
+  --shadow-2:
+    0 12px 40px light-dark(rgba(31, 26, 23, .18), transparent),
+    0 16px 48px light-dark(transparent, rgba(0, 0, 0, .6));
+}
+
+/* ---------- 공통 토큰 (테마 무관) — 시안 3장 그대로 ---------- */
+:root {
+  --font: "Pretendard", "Pretendard Variable", -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+  /* 코드 글꼴은 따로 넣지 않고 기기 기본 고정폭을 쓴다(D-024 5번). 시안의 "D2Coding"은 설치된 기기에서만 쓰인다. */
+  --font-mono: "D2Coding", ui-monospace, "SF Mono", Menlo, monospace;
+  --fs-xs: 12px; --fs-sm: 14px; --fs-md: 16px; --fs-body: 17px;
+  --fs-lg: 19px; --fs-xl: 22px; --fs-2xl: 26px; --fs-3xl: 30px;
+  --lh-tight: 1.3; --lh-ui: 1.45; --lh-body: 1.78;
+  --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-5: 20px;
+  --sp-6: 24px; --sp-7: 32px; --sp-8: 40px; --sp-9: 56px;
+  --r-sm: 8px; --r-md: 14px; --r-lg: 20px; --r-xl: 28px; --r-pill: 999px;
+  --tap: 44px;
+  --bar-h: 56px;
+  --read-w: 680px;
+  --drawer-w: 300px;
+
+  /* 시안 README "데스크톱 규칙"·withvibe.css 21장의 값을 이름 붙여 모음(원본에서는 규칙 안에 직접 적혀 있음) */
+  --side-w: 272px;        /* 데스크톱 사이드바 */
+  --rail-w: 72px;         /* 접힌 사이드바(레일) */
+  --ad-h: 100px;          /* 광고 자리 고정 높이(728×90 배너가 들어가는 높이) */
+}
