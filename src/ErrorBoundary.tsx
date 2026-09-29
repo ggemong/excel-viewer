@@ -1,4 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react'
+import { reportError } from './telemetry/reportError'
 
 interface ErrorBoundaryProps {
   children: ReactNode
@@ -11,7 +12,7 @@ interface ErrorBoundaryState {
 /**
  * 화면 전체가 새하얗게(사실은 까맣게) 죽어버리는 대신 최소한의 복구 경로를
  * 보여준다. 실제로 렌더링 중 에러가 한 번 발생했는데 아무 안내 없이 빈
- * 화면만 남는 걸 본 뒤 추가했다 — telemetry(M6)가 붙으면 여기서 리포트한다.
+ * 화면만 남는 걸 본 뒤 추가했다.
  */
 export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
   state: ErrorBoundaryState = { error: null }
@@ -22,6 +23,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 
   componentDidCatch(error: Error, info: ErrorInfo) {
     console.error('Unhandled render error:', error, info.componentStack)
+    reportError(error.message)
   }
 
   render() {

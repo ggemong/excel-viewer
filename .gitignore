@@ -27,3 +27,9 @@ dist-ssr
 # src/assets/에 이미 정리해 넣었다. 이 원본 스크린샷은 저장소에 안 넣는다.
 /withvibe_cat_full.png
 /브랜드 · 타이가 · 컴포넌트@2x.png
+
+# Cloudflare Pages/Wrangler 로컬 상태 — WITHVIBE_API_KEY 같은 비밀값이
+# .dev.vars에 들어가므로 절대 커밋하지 않는다. .example 템플릿은 예외.
+.wrangler
+.dev.vars
+!.dev.vars.example

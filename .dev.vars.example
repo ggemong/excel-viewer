@@ -1,0 +1,4 @@
+# wrangler pages dev가 로컬에서 functions/report-error.ts를 테스트할 때 읽는 값.
+# 이 파일을 .dev.vars로 복사하고 실제 키를 채운다 — .dev.vars는 git에 안 올라간다.
+# 배포 환경에는 이 파일이 아니라 `wrangler pages secret put WITHVIBE_API_KEY`로 넣는다.
+WITHVIBE_API_KEY=

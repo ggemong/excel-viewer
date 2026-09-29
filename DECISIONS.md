@@ -44,6 +44,7 @@
 ## D-004. 배포: Cloudflare Pages
 
 - **날짜**: 2026-09-30
-- **상태**: 확정 (M6에서 실제 설정)
+- **상태**: 확정 — 코드는 준비됨(`functions/report-error.ts`, `src/telemetry/reportError.ts`), 실제 배포·계정 설정은 사용자가 직접 해야 함(아래)
 - **결정**: 정적 사이트 + 에러 리포트 중계용 Pages Function 하나. withvibe 허브와 같은 생태계라 `excel.withvibe.kr` 서브도메인 연결이 수월함.
 - **배경**: withvibe 허브의 에러 리포팅 API는 API 키를 서버 쪽에서만 호출해야 해서, 완전 정적 사이트여도 아주 작은 서버리스 함수 하나는 필요하다. 사용자에게 확인받고 결정.
+- **남은 작업(계정이 필요해서 AI가 대신 못 하는 부분)**: (1) `https://www.withvibe.kr/admin/ops/`에서 `excel-viewer` API 키 발급/재발급, (2) GitHub 저장소 생성+푸시, (3) Cloudflare Pages 프로젝트 생성(그 저장소 연결) 및 `WITHVIBE_API_KEY`를 `wrangler pages secret put`으로 등록, (4) `excel.withvibe.kr` 서브도메인 연결.
