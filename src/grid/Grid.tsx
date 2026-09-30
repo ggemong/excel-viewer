@@ -106,6 +106,16 @@ export function Grid({ sheet, editMode, onEditCell, diff, onSelectionChange }: G
     setDraft(cell && cell.value !== null ? String(cell.value) : '')
   }
 
+  /** anchor가 가리키는 칸을 연다 — 수식/병합 비-마스터 칸이면 조용히 무시(startEdit이 수식은 이미 막음). */
+  const openEditOnAnchor = () => {
+    const pos = anchorRef.current
+    if (!pos) return
+    const merge = mergeLookup.get(`${pos.row},${pos.col}`)
+    if (merge) return
+    const cellData = sheet.rows[pos.row - 1]?.[pos.col - 1]
+    startEdit(cellAddress(pos.row, pos.col), cellData)
+  }
+
   // 마우스를 눌렀다 뗄 때까지 실제로 다른 칸으로 옮겨갔는지(드래그로 범위를
   // 그린 것)와 shift를 눌렀는지(범위 확장만 의도한 것)를 보고, 둘 다
   // 아니면(단순 클릭) 그 칸을 편집 모드로 연다 — mouseup 시점에 판단해야
@@ -115,14 +125,7 @@ export function Grid({ sheet, editMode, onEditCell, diff, onSelectionChange }: G
     const onMouseUp = () => {
       draggingRef.current = false
       setDragging(false)
-      const anchorNow = anchorRef.current
-      if (!movedRef.current && !shiftRef.current && editMode && anchorNow) {
-        const merge = mergeLookup.get(`${anchorNow.row},${anchorNow.col}`)
-        if (!merge) {
-          const cellData = sheet.rows[anchorNow.row - 1]?.[anchorNow.col - 1]
-          startEdit(cellAddress(anchorNow.row, anchorNow.col), cellData)
-        }
-      }
+      if (!movedRef.current && !shiftRef.current && editMode) openEditOnAnchor()
     }
     window.addEventListener('mouseup', onMouseUp)
     return () => window.removeEventListener('mouseup', onMouseUp)
@@ -155,6 +158,7 @@ export function Grid({ sheet, editMode, onEditCell, diff, onSelectionChange }: G
       setFocusBoth({ row: nextRow, col: nextCol })
     }
     rowVirtualizer.scrollToIndex(nextRow - 1, { align: 'auto' })
+    scrollRef.current?.focus()
   }
 
   const handleCopy = () => {
@@ -257,6 +261,9 @@ export function Grid({ sheet, editMode, onEditCell, diff, onSelectionChange }: G
             // 가상 스크롤이라 화면 밖 행으로 이동하면 실제로 안 보인다 — 대상
             // 행이 보이게 스크롤한다(열은 가상화 안 해서 다 DOM에 있으므로 안 건드림).
             rowVirtualizer.scrollToIndex(nextRow - 1, { align: 'auto' })
+          } else if ((e.key === 'Enter' || e.key === 'F2') && editMode && anchorRef.current) {
+            e.preventDefault()
+            openEditOnAnchor()
           } else if ((e.ctrlKey || e.metaKey) && e.key === 'c' && selection) {
             e.preventDefault()
             handleCopy()
@@ -360,10 +367,16 @@ export function Grid({ sheet, editMode, onEditCell, diff, onSelectionChange }: G
                           onChange={(e) => setDraft(e.target.value)}
                           onBlur={commitEdit}
                           onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
+                            if (e.key === 'Enter' || e.key === 'F2') {
                               commitEdit()
+                              // 편집을 키보드로 끝냈을 땐 그리드로 포커스를 되돌려야
+                              // 다음 방향키/Enter/F2/Ctrl+C가 계속 먹힌다 — blur로
+                              // 끝난 경우(다른 칸 클릭 등)는 그 대상이 알아서 포커스를
+                              // 받으므로 여기서 강제로 되돌리지 않는다.
+                              scrollRef.current?.focus()
                             } else if (e.key === 'Escape') {
                               cancelEdit()
+                              scrollRef.current?.focus()
                             } else if (e.key === 'ArrowUp') {
                               e.preventDefault()
                               commitAndMove(-1, 0, e.shiftKey)
