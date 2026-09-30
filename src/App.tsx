@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { CellRange } from './clipboard/buildClipboardPayload'
 import { DropZone } from './grid/DropZone'
 import { Grid } from './grid/Grid'
@@ -35,6 +35,20 @@ function App() {
   } = useWorkbookController()
   const layout = useResponsiveLayout()
   const [selection, setSelection] = useState<CellRange | null>(null)
+
+  // Ctrl/Cmd+S로 저장 — 그리드가 아니라 앱 전체에서 동작해야 하는 단축키라
+  // (모바일 카드뷰일 때도 눌릴 수 있음) Grid 안이 아니라 여기서 처리한다.
+  // 브라우저 기본 "페이지 저장" 동작은 항상 막는다.
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+        e.preventDefault()
+        if (isDirty && !saving) void saveFile()
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [isDirty, saving, saveFile])
 
   return (
     <div className="app-shell">

@@ -37,13 +37,26 @@ export function Grid({ sheet, editMode, onEditCell, diff, onSelectionChange }: G
   const [anchor, setAnchor] = useState<{ row: number; col: number } | null>(null)
   const [focus, setFocus] = useState<{ row: number; col: number } | null>(null)
   const [dragging, setDragging] = useState(false)
-  // dragging은 state라 mousedown 직후 바로 다음 mouseenter가 리렌더보다 먼저
-  // 도착하면(빠른 드래그) 아직 false로 읽힐 수 있다 — 그 레이스를 피하려고
-  // 게이트 체크 자체는 항상 최신값인 ref로 한다. state는 mouseup 이펙트를
-  // 구독/해제하는 용도로만 쓴다.
+  // anchor/focus를 state 클로저로만 읽으면, 같은 동기 구간 안에서 이벤트가
+  // 연달아 여러 번 오는 경우(방향키를 빠르게 누르거나 프로그램이 연속
+  // dispatch할 때) 리렌더 전이라 전부 같은 "이전" 값을 보고 서로를 덮어써
+  // 이동이 씹힐 수 있다 — 그래서 항상 최신값인 ref를 같이 들고 다닌다.
+  // dragging도 같은 이유로 게이트 체크는 ref로 하고, state는 mouseup
+  // 이펙트를 구독/해제하는 용도로만 쓴다.
+  const anchorRef = useRef<{ row: number; col: number } | null>(null)
+  const focusRef = useRef<{ row: number; col: number } | null>(null)
   const draggingRef = useRef(false)
   const movedRef = useRef(false)
   const shiftRef = useRef(false)
+
+  const setAnchorBoth = (pos: { row: number; col: number }) => {
+    anchorRef.current = pos
+    setAnchor(pos)
+  }
+  const setFocusBoth = (pos: { row: number; col: number }) => {
+    focusRef.current = pos
+    setFocus(pos)
+  }
   const { copyRange, copied } = useClipboardCopy()
   const mergeLookup = useMergeLookup(sheet.merges)
 
@@ -64,11 +77,11 @@ export function Grid({ sheet, editMode, onEditCell, diff, onSelectionChange }: G
   const beginSelect = (row: number, col: number, shiftKey: boolean) => {
     movedRef.current = false
     shiftRef.current = shiftKey
-    if (shiftKey && anchor) {
-      setFocus({ row, col })
+    if (shiftKey && anchorRef.current) {
+      setFocusBoth({ row, col })
     } else {
-      setAnchor({ row, col })
-      setFocus({ row, col })
+      setAnchorBoth({ row, col })
+      setFocusBoth({ row, col })
     }
     draggingRef.current = true
     setDragging(true)
@@ -76,17 +89,15 @@ export function Grid({ sheet, editMode, onEditCell, diff, onSelectionChange }: G
 
   const extendSelect = (row: number, col: number) => {
     if (!draggingRef.current) return
-    setFocus((f) => {
-      if (f && f.row === row && f.col === col) return f
-      movedRef.current = true
-      return { row, col }
-    })
+    if (focusRef.current && focusRef.current.row === row && focusRef.current.col === col) return
+    movedRef.current = true
+    setFocusBoth({ row, col })
   }
 
   /** 행 번호/열 이름/모서리를 눌렀을 때: 드래그 판정 없이 그 행·열·전체를 바로 선택한다. */
   const selectWhole = (a: { row: number; col: number }, b: { row: number; col: number }) => {
-    setAnchor(a)
-    setFocus(b)
+    setAnchorBoth(a)
+    setFocusBoth(b)
   }
 
   const startEdit = (address: string, cell: CellModel | undefined) => {
@@ -104,11 +115,12 @@ export function Grid({ sheet, editMode, onEditCell, diff, onSelectionChange }: G
     const onMouseUp = () => {
       draggingRef.current = false
       setDragging(false)
-      if (!movedRef.current && !shiftRef.current && editMode && anchor) {
-        const merge = mergeLookup.get(`${anchor.row},${anchor.col}`)
+      const anchorNow = anchorRef.current
+      if (!movedRef.current && !shiftRef.current && editMode && anchorNow) {
+        const merge = mergeLookup.get(`${anchorNow.row},${anchorNow.col}`)
         if (!merge) {
-          const cellData = sheet.rows[anchor.row - 1]?.[anchor.col - 1]
-          startEdit(cellAddress(anchor.row, anchor.col), cellData)
+          const cellData = sheet.rows[anchorNow.row - 1]?.[anchorNow.col - 1]
+          startEdit(cellAddress(anchorNow.row, anchorNow.col), cellData)
         }
       }
     }
@@ -197,7 +209,34 @@ export function Grid({ sheet, editMode, onEditCell, diff, onSelectionChange }: G
         tabIndex={0}
         onPaste={handlePaste}
         onKeyDown={(e) => {
-          if ((e.ctrlKey || e.metaKey) && e.key === 'c' && selection) {
+          // 셀 편집 중(입력창에 포커스)일 땐 이 아래 단축키를 전부 무시한다 —
+          // 안 그러면 입력창 안에서 텍스트 복사/방향키 이동하려던 게 그리드
+          // 단축키로 가로채인다. Enter/Escape는 입력창 자체의 onKeyDown이 처리.
+          if (editingAddress) return
+
+          const arrowDelta: Record<string, [number, number]> = {
+            ArrowUp: [-1, 0],
+            ArrowDown: [1, 0],
+            ArrowLeft: [0, -1],
+            ArrowRight: [0, 1],
+          }
+          const delta = arrowDelta[e.key]
+
+          if (delta) {
+            e.preventDefault()
+            const base = focusRef.current ?? anchorRef.current ?? { row: 1, col: 1 }
+            const nextRow = Math.min(Math.max(base.row + delta[0], 1), Math.max(sheet.rowCount, 1))
+            const nextCol = Math.min(Math.max(base.col + delta[1], 1), Math.max(sheet.colCount, 1))
+            if (e.shiftKey && anchorRef.current) {
+              setFocusBoth({ row: nextRow, col: nextCol })
+            } else {
+              setAnchorBoth({ row: nextRow, col: nextCol })
+              setFocusBoth({ row: nextRow, col: nextCol })
+            }
+            // 가상 스크롤이라 화면 밖 행으로 이동하면 실제로 안 보인다 — 대상
+            // 행이 보이게 스크롤한다(열은 가상화 안 해서 다 DOM에 있으므로 안 건드림).
+            rowVirtualizer.scrollToIndex(nextRow - 1, { align: 'auto' })
+          } else if ((e.ctrlKey || e.metaKey) && e.key === 'c' && selection) {
             e.preventDefault()
             handleCopy()
           } else if ((e.key === 'Delete' || e.key === 'Backspace') && editMode && selection) {
