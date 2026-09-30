@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildHtmlTable, buildTsv, normalizeRange } from './buildClipboardPayload'
+import { buildHtmlTable, buildTsv, normalizeRange, parseTsv } from './buildClipboardPayload'
 import type { SheetModel } from '../xlsx/types'
 
 function cell(value: string | number | null) {
@@ -38,6 +38,29 @@ describe('buildTsv', () => {
   it('빈 셀은 빈 문자열로 나온다', () => {
     const tsv = buildTsv(sheet, { r0: 3, c0: 1, r1: 3, c1: 1 })
     expect(tsv).toBe('')
+  })
+})
+
+describe('parseTsv', () => {
+  it('탭/개행으로 표를 복원한다', () => {
+    expect(parseTsv('A\tB\n1\t2')).toEqual([
+      ['A', 'B'],
+      ['1', '2'],
+    ])
+  })
+
+  it('buildTsv가 만든 이스케이프를 정확히 되돌린다(왕복)', () => {
+    const range = { r0: 1, c0: 1, r1: 3, c1: 2 }
+    const tsv = buildTsv(sheet, range)
+    expect(parseTsv(tsv)).toEqual([
+      ['Name', 'Amount'],
+      ['a "quote"\ttab', '100'],
+      ['', 'line1\nline2'],
+    ])
+  })
+
+  it('맨 끝 줄이 빈 줄이면(복사 시 흔함) 무시한다', () => {
+    expect(parseTsv('A\tB\n')).toEqual([['A', 'B']])
   })
 })
 

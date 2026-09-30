@@ -142,12 +142,24 @@
   background: var(--bg-sunk);
   color: var(--text-3);
   font-size: var(--fs-xs);
+  cursor: pointer;
+  user-select: none;
+}
+.grid-cell--colhead:hover,
+.grid-cell--rownum:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.grid-cell--corner {
+  cursor: pointer;
 }
 .grid-cell--rownum {
   justify-content: center;
   background: var(--bg-sunk);
   color: var(--text-3);
   font-size: var(--fs-xs);
+  cursor: pointer;
+  user-select: none;
 }
 .grid-cell[data-editable="true"] {
   cursor: text;

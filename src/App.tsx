@@ -1,3 +1,5 @@
+import { useState } from 'react'
+import type { CellRange } from './clipboard/buildClipboardPayload'
 import { DropZone } from './grid/DropZone'
 import { Grid } from './grid/Grid'
 import { GridCards } from './grid/GridCards'
@@ -32,6 +34,7 @@ function App() {
     activeSheetDiff,
   } = useWorkbookController()
   const layout = useResponsiveLayout()
+  const [selection, setSelection] = useState<CellRange | null>(null)
 
   return (
     <div className="app-shell">
@@ -54,7 +57,7 @@ function App() {
         <DropZone onFile={openFile} error={error} loading={loading} />
       ) : (
         <>
-          <SummaryBar sheet={activeSheet} />
+          <SummaryBar sheet={activeSheet} selection={layout === 'mobile' ? null : selection} />
           {(saveError || compareError) && (
             <div className="summary-bar" style={{ background: 'var(--accent-soft)', color: 'var(--accent)' }}>
               {saveError ?? compareError}
@@ -63,7 +66,13 @@ function App() {
           {layout === 'mobile' ? (
             <GridCards sheet={activeSheet} editMode={editMode} onEditCell={editCell} diff={activeSheetDiff} />
           ) : (
-            <Grid sheet={activeSheet} editMode={editMode} onEditCell={editCell} diff={activeSheetDiff} />
+            <Grid
+              sheet={activeSheet}
+              editMode={editMode}
+              onEditCell={editCell}
+              diff={activeSheetDiff}
+              onSelectionChange={setSelection}
+            />
           )}
           {workbook.sheets.length > 1 && (
             <div className="sheet-tabs">
@@ -73,7 +82,10 @@ function App() {
                   type="button"
                   className="sheet-tab"
                   aria-current={i === activeSheetIndex}
-                  onClick={() => setActiveSheetIndex(i)}
+                  onClick={() => {
+                    setActiveSheetIndex(i)
+                    setSelection(null)
+                  }}
                 >
                   {sheet.name}
                 </button>
