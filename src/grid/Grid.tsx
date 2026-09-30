@@ -136,6 +136,27 @@ export function Grid({ sheet, editMode, onEditCell, diff, onSelectionChange }: G
 
   const cancelEdit = () => setEditingAddress(null)
 
+  /**
+   * 편집 중에 방향키를 누르면(실제 엑셀과 동일하게) 지금 입력을 커밋하고
+   * 그 방향의 셀로 이동한다 — 입력창에 포커스가 있으면 그리드의 방향키
+   * 이동 로직에 아예 안 닿기 때문에, 입력창 쪽에서 따로 처리해야 한다.
+   */
+  const commitAndMove = (dr: number, dc: number, shiftKey: boolean) => {
+    if (editingAddress) onEditCell(editingAddress, draft)
+    setEditingAddress(null)
+    const base = focusRef.current ?? anchorRef.current
+    if (!base) return
+    const nextRow = Math.min(Math.max(base.row + dr, 1), Math.max(sheet.rowCount, 1))
+    const nextCol = Math.min(Math.max(base.col + dc, 1), Math.max(sheet.colCount, 1))
+    if (shiftKey && anchorRef.current) {
+      setFocusBoth({ row: nextRow, col: nextCol })
+    } else {
+      setAnchorBoth({ row: nextRow, col: nextCol })
+      setFocusBoth({ row: nextRow, col: nextCol })
+    }
+    rowVirtualizer.scrollToIndex(nextRow - 1, { align: 'auto' })
+  }
+
   const handleCopy = () => {
     if (selection) void copyRange(sheet, selection)
   }
@@ -339,8 +360,31 @@ export function Grid({ sheet, editMode, onEditCell, diff, onSelectionChange }: G
                           onChange={(e) => setDraft(e.target.value)}
                           onBlur={commitEdit}
                           onKeyDown={(e) => {
-                            if (e.key === 'Enter') commitEdit()
-                            else if (e.key === 'Escape') cancelEdit()
+                            if (e.key === 'Enter') {
+                              commitEdit()
+                            } else if (e.key === 'Escape') {
+                              cancelEdit()
+                            } else if (e.key === 'ArrowUp') {
+                              e.preventDefault()
+                              commitAndMove(-1, 0, e.shiftKey)
+                            } else if (e.key === 'ArrowDown') {
+                              e.preventDefault()
+                              commitAndMove(1, 0, e.shiftKey)
+                            } else if (e.key === 'ArrowLeft') {
+                              // 텍스트 커서가 맨 앞일 때만 셀 이동으로 취급한다 —
+                              // 안 그러면 긴 값 수정 중에 커서를 옮길 수가 없다.
+                              const el = e.currentTarget
+                              if (el.selectionStart === 0 && el.selectionEnd === 0) {
+                                e.preventDefault()
+                                commitAndMove(0, -1, e.shiftKey)
+                              }
+                            } else if (e.key === 'ArrowRight') {
+                              const el = e.currentTarget
+                              if (el.selectionStart === el.value.length && el.selectionEnd === el.value.length) {
+                                e.preventDefault()
+                                commitAndMove(0, 1, e.shiftKey)
+                              }
+                            }
                           }}
                         />,
                       )
