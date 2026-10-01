@@ -1,22 +1,20 @@
 import { useCallback, useMemo, useState } from 'react'
 import { diffWorkbooks } from '../diff/diffWorkbooks'
 import { cellAddress, parseCellAddress } from '../xlsx/cellRef'
+import { isPlainNumberLiteral } from '../xlsx/cellValue'
 import { findMergeAt, isMergeMaster, parseMergeRanges } from '../xlsx/mergeRange'
 import type { CellEdit } from '../xlsx/patch'
 import { readWorkbook } from '../xlsx/read'
 import type { WorkbookModel } from '../xlsx/types'
 
-const SUPPORTED_EXTENSIONS = ['.xlsx', '.csv']
-
-function isPlainNumber(text: string): boolean {
-  return /^-?\d+(\.\d+)?$/.test(text)
-}
+/** 지원하는 파일 확장자 — 열기 검증(아래)과 파일 선택 UI(DropZone/Toolbar의 accept)가 같이 쓴다. */
+export const SUPPORTED_EXTENSIONS = ['.xlsx', '.csv']
 
 /** 입력값을 편집 로직이 쓸 리터럴로 정규화한다: 빈 문자열은 삭제(null), 숫자 패턴은 숫자로. */
 function normalizeInput(raw: string): string | number | null {
   const trimmed = raw.trim()
   if (trimmed === '') return null
-  if (isPlainNumber(trimmed)) return Number(trimmed)
+  if (isPlainNumberLiteral(trimmed)) return Number(trimmed)
   return trimmed
 }
 
@@ -70,6 +68,17 @@ export function useWorkbookController() {
   const [compareLoading, setCompareLoading] = useState(false)
   const [compareError, setCompareError] = useState<string | null>(null)
 
+  /** 파일을 새로 열거나 닫을 때 공통으로 되돌려야 하는 상태 — 이전 파일의 편집/비교 상태가 새 파일로 새어 들어가지 않게 한다. */
+  const resetEditAndCompareState = () => {
+    setActiveSheetIndex(0)
+    setEdits(new Map())
+    setEditMode(false)
+    setSaveError(null)
+    setCompareWorkbook(null)
+    setCompareFileName(null)
+    setCompareError(null)
+  }
+
   const openFile = useCallback(async (nextFile: File) => {
     const lower = nextFile.name.toLowerCase()
     if (!SUPPORTED_EXTENSIONS.some((ext) => lower.endsWith(ext))) {
@@ -83,13 +92,7 @@ export function useWorkbookController() {
       const model = await readWorkbook(nextFile)
       setWorkbook(model)
       setFile(nextFile)
-      setActiveSheetIndex(0)
-      setEdits(new Map())
-      setEditMode(false)
-      setSaveError(null)
-      setCompareWorkbook(null)
-      setCompareFileName(null)
-      setCompareError(null)
+      resetEditAndCompareState()
     } catch {
       setError('파일을 읽지 못했어요. 손상되었거나 지원하지 않는 형식일 수 있어요.')
     } finally {
@@ -100,14 +103,8 @@ export function useWorkbookController() {
   const closeFile = useCallback(() => {
     setWorkbook(null)
     setFile(null)
-    setActiveSheetIndex(0)
     setError(null)
-    setEdits(new Map())
-    setEditMode(false)
-    setSaveError(null)
-    setCompareWorkbook(null)
-    setCompareFileName(null)
-    setCompareError(null)
+    resetEditAndCompareState()
   }, [])
 
   const loadCompareFile = useCallback(async (compareCandidate: File) => {

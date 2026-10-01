@@ -6,6 +6,13 @@ import { cellAddress, columnLetter } from '../xlsx/cellRef'
 import { formatCellValue } from '../xlsx/formatValue'
 import type { CellModel, SheetModel } from '../xlsx/types'
 
+// 가상 스크롤용 카드 높이 추정치일 뿐 실제 렌더 높이와 정확히 일치할 필요는 없다
+// (Grid.tsx의 ROW_HEIGHT와 달리 카드 높이는 CSS가 아니라 내용에 따라 자연스럽게
+// 정해지므로, react-virtual이 실측 후 알아서 보정한다) — 그래도 이름 없는 숫자로
+// 흩어놓지 않도록 상수로 뺀다.
+const CARD_BASE_HEIGHT = 96
+const CARD_FIELD_HEIGHT = 10
+
 interface GridCardsProps {
   sheet: SheetModel
   editMode: boolean
@@ -33,7 +40,7 @@ export function GridCards({ sheet, editMode, onEditCell, diff }: GridCardsProps)
   const rowVirtualizer = useVirtualizer({
     count: dataRowCount,
     getScrollElement: () => scrollRef.current,
-    estimateSize: () => (editMode ? 96 + headerLabels.length * 10 : 96),
+    estimateSize: () => (editMode ? CARD_BASE_HEIGHT + headerLabels.length * CARD_FIELD_HEIGHT : CARD_BASE_HEIGHT),
     overscan: 8,
   })
 

@@ -15,6 +15,14 @@ interface Env {
   WITHVIBE_API_KEY: string
 }
 
+// withvibe 허브(home-withvibe/src/config/telemetry.ts)의 MAX_ERROR_PAGE_LEN/
+// MAX_ERROR_MESSAGE_LEN과 같은 값이어야 한다 — 별도 저장소라 import로 묶을 수
+// 없으니, 여기서도 이름을 붙여 어느 쪽 설정을 따라가는 값인지 밝혀둔다. 짧게
+// 보내도 허브 쪽에서 어차피 다시 자르므로 여기서 더 길게 보내는 건 무해하지만,
+// 더 짧게 보내는 쪽으로 어긋나면 리포트 내용이 말없이 잘릴 수 있다.
+const MAX_PAGE_LEN = 300
+const MAX_MESSAGE_LEN = 500
+
 interface ReportBody {
   message?: unknown
   page?: unknown
@@ -48,8 +56,8 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       body: JSON.stringify({
         project: 'excel-viewer',
         type: 'error',
-        page: body.page.slice(0, 300),
-        message: body.message.slice(0, 500),
+        page: body.page.slice(0, MAX_PAGE_LEN),
+        message: body.message.slice(0, MAX_MESSAGE_LEN),
       }),
     })
     return new Response(null, { status: upstream.status })

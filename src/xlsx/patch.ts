@@ -1,6 +1,7 @@
 import { parseCellAddress } from './cellRef'
+import { isPlainNumberLiteral } from './cellValue'
 import { compressEntry, decompressEntry } from './deflate'
-import { findMergeAt, isMergeMaster, type MergeRange } from './mergeRange'
+import { findMergeAt, isMergeMaster, parseMergeRanges, type MergeRange } from './mergeRange'
 import { buildZip, parseZip, type ZipEntry } from './zip'
 
 const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
@@ -108,22 +109,12 @@ function patchSheetEntry(entry: ZipEntry, edits: CellEdit[]): ZipEntry {
   return { ...entry, data, crc32, compressedSize, uncompressedSize }
 }
 
+/** <mergeCell ref="A1:B2"> 목록을 뽑아 mergeRange.ts의 공통 파서(읽기 경로도 같은 걸 씀)에 넘긴다. */
 function parseMergeRangesFromDoc(doc: Document): MergeRange[] {
-  const ranges: MergeRange[] = []
-  for (const mergeCell of Array.from(doc.getElementsByTagName('mergeCell'))) {
-    const ref = mergeCell.getAttribute('ref')
-    if (!ref) continue
-    const [a, b] = ref.split(':')
-    const pa = parseCellAddress(a)
-    const pb = parseCellAddress(b ?? a)
-    ranges.push({
-      r0: Math.min(pa.row, pb.row),
-      c0: Math.min(pa.col, pb.col),
-      r1: Math.max(pa.row, pb.row),
-      c1: Math.max(pa.col, pb.col),
-    })
-  }
-  return ranges
+  const refs = Array.from(doc.getElementsByTagName('mergeCell'))
+    .map((el) => el.getAttribute('ref'))
+    .filter((ref): ref is string => Boolean(ref))
+  return parseMergeRanges(refs)
 }
 
 function applyEdit(doc: Document, sheetData: Element, edit: CellEdit, mergeRanges: MergeRange[]) {
@@ -151,7 +142,7 @@ function applyEdit(doc: Document, sheetData: Element, edit: CellEdit, mergeRange
 
   while (cell.firstChild) cell.removeChild(cell.firstChild)
 
-  if (isPlainNumber(edit.newValue)) {
+  if (typeof edit.newValue === 'number' ? Number.isFinite(edit.newValue) : isPlainNumberLiteral(edit.newValue)) {
     cell.removeAttribute('t')
     const v = doc.createElement('v')
     v.textContent = String(edit.newValue)
@@ -164,11 +155,6 @@ function applyEdit(doc: Document, sheetData: Element, edit: CellEdit, mergeRange
     is.appendChild(t)
     cell.appendChild(is)
   }
-}
-
-function isPlainNumber(value: string | number): boolean {
-  if (typeof value === 'number') return Number.isFinite(value)
-  return /^-?\d+(\.\d+)?$/.test(value.trim())
 }
 
 function findOrInsertRow(doc: Document, sheetData: Element, rowNum: number): Element {

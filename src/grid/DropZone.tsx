@@ -1,5 +1,6 @@
 import { useRef, useState, type DragEvent } from 'react'
 import tigerBody from '../assets/tiger/tiger-body.png'
+import { SUPPORTED_EXTENSIONS } from '../state/useWorkbookController'
 
 interface DropZoneProps {
   onFile: (file: File) => void
@@ -46,7 +47,7 @@ export function DropZone({ onFile, error, loading }: DropZoneProps) {
         <input
           ref={inputRef}
           type="file"
-          accept=".xlsx,.csv"
+          accept={SUPPORTED_EXTENSIONS.join(',')}
           style={{ display: 'none' }}
           onChange={(e) => {
             const file = e.target.files?.[0]

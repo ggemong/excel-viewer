@@ -1,5 +1,6 @@
 import { useRef } from 'react'
 import tigerFace from '../assets/tiger/tiger-face.png'
+import { SUPPORTED_EXTENSIONS } from '../state/useWorkbookController'
 
 interface ToolbarProps {
   fileName: string | null
@@ -55,10 +56,9 @@ export function Toolbar({
           <>
             <button
               type="button"
-              className="pill pill--outline"
+              className={`pill pill--outline${editMode ? ' pill--accent' : ''}`}
               aria-pressed={editMode}
               onClick={onToggleEditMode}
-              style={editMode ? { color: 'var(--accent)', borderColor: 'var(--accent)' } : undefined}
             >
               {editMode ? '편집 중' : '편집 모드'}
             </button>
@@ -69,14 +69,9 @@ export function Toolbar({
             )}
 
             {compareFileName ? (
-              <span className="pill pill--outline" style={{ color: 'var(--accent)', borderColor: 'var(--accent)' }}>
+              <span className="pill pill--outline pill--accent">
                 {compareFileName}와 비교 중
-                <button
-                  type="button"
-                  onClick={onClearCompare}
-                  aria-label="비교 종료"
-                  style={{ border: 'none', background: 'none', color: 'inherit', cursor: 'pointer', padding: 0, marginLeft: 4 }}
-                >
+                <button type="button" className="pill-close" onClick={onClearCompare} aria-label="비교 종료">
                   ×
                 </button>
               </span>
@@ -93,7 +88,7 @@ export function Toolbar({
             <input
               ref={compareInputRef}
               type="file"
-              accept=".xlsx,.csv"
+              accept={SUPPORTED_EXTENSIONS.join(',')}
               style={{ display: 'none' }}
               onChange={(e) => {
                 const f = e.target.files?.[0]

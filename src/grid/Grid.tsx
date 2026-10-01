@@ -1,4 +1,12 @@
-import { useEffect, useMemo, useRef, useState, type ClipboardEvent as ReactClipboardEvent, type ReactNode } from 'react'
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ClipboardEvent as ReactClipboardEvent,
+  type CSSProperties,
+  type ReactNode,
+} from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { normalizeRange, parseTsv, type CellRange } from '../clipboard/buildClipboardPayload'
 import { useClipboardCopy } from '../clipboard/useClipboardCopy'
@@ -8,6 +16,7 @@ import { cellAddress, columnLetter } from '../xlsx/cellRef'
 import { formatCellValue } from '../xlsx/formatValue'
 import type { CellModel, SheetModel } from '../xlsx/types'
 
+/** 가상 스크롤의 행 높이 추정치 — components.css의 .grid-cell에 --grid-row-h로 주입해서 실제 렌더 높이와 묶는다(아래 return문). */
 const ROW_HEIGHT = 34
 const HEADER_HEIGHT = 32
 const ROW_NUM_WIDTH = 44
@@ -140,15 +149,15 @@ export function Grid({ sheet, editMode, onEditCell, diff, onSelectionChange }: G
   const cancelEdit = () => setEditingAddress(null)
 
   /**
-   * 편집 중에 방향키를 누르면(실제 엑셀과 동일하게) 지금 입력을 커밋하고
-   * 그 방향의 셀로 이동한다 — 입력창에 포커스가 있으면 그리드의 방향키
-   * 이동 로직에 아예 안 닿기 때문에, 입력창 쪽에서 따로 처리해야 한다.
+   * focus(없으면 anchor, 둘 다 없으면 A1)에서 (dr, dc)만큼 이동한 칸으로 선택을
+   * 옮긴다 — 시트 범위로 clamp하고, shift가 눌려있으면 focus만 넓혀 범위를
+   * 늘리고 아니면 anchor/focus를 함께 옮긴다(새로 한 칸만 선택). 가상 스크롤이라
+   * 화면 밖 행으로 이동하면 실제로 안 보이므로 대상 행이 보이게 스크롤한다(열은
+   * 가상화 안 해서 다 DOM에 있으므로 안 건드림). 방향키 핸들러와 commitAndMove가
+   * 같이 쓴다 — 둘 다 "다음 칸을 계산해서 선택을 옮긴다"는 같은 일을 한다.
    */
-  const commitAndMove = (dr: number, dc: number, shiftKey: boolean) => {
-    if (editingAddress) onEditCell(editingAddress, draft)
-    setEditingAddress(null)
-    const base = focusRef.current ?? anchorRef.current
-    if (!base) return
+  const moveFocus = (dr: number, dc: number, shiftKey: boolean) => {
+    const base = focusRef.current ?? anchorRef.current ?? { row: 1, col: 1 }
     const nextRow = Math.min(Math.max(base.row + dr, 1), Math.max(sheet.rowCount, 1))
     const nextCol = Math.min(Math.max(base.col + dc, 1), Math.max(sheet.colCount, 1))
     if (shiftKey && anchorRef.current) {
@@ -158,6 +167,19 @@ export function Grid({ sheet, editMode, onEditCell, diff, onSelectionChange }: G
       setFocusBoth({ row: nextRow, col: nextCol })
     }
     rowVirtualizer.scrollToIndex(nextRow - 1, { align: 'auto' })
+  }
+
+  /**
+   * 편집 중에 방향키를 누르면(실제 엑셀과 동일하게) 지금 입력을 커밋하고
+   * 그 방향의 셀로 이동한다 — 입력창에 포커스가 있으면 그리드의 방향키
+   * 이동 로직에 아예 안 닿기 때문에, 입력창 쪽에서 따로 처리해야 한다.
+   * (아직 아무 칸도 선택된 적 없으면 — 편집 중이었다면 있을 수 없지만 방어적으로 — 이동하지 않는다.)
+   */
+  const commitAndMove = (dr: number, dc: number, shiftKey: boolean) => {
+    if (editingAddress) onEditCell(editingAddress, draft)
+    setEditingAddress(null)
+    if (!focusRef.current && !anchorRef.current) return
+    moveFocus(dr, dc, shiftKey)
     scrollRef.current?.focus()
   }
 
@@ -205,7 +227,7 @@ export function Grid({ sheet, editMode, onEditCell, diff, onSelectionChange }: G
   }
 
   return (
-    <div className="grid-card">
+    <div className="grid-card" style={{ '--grid-row-h': `${ROW_HEIGHT}px` } as CSSProperties}>
       {diff && (diff.changedCount > 0 || diff.addedCount > 0 || diff.removedCount > 0) && (
         <div className="grid-selection-bar" style={{ left: 8, right: 'auto' }}>
           <span data-diff="changed">변경 {diff.changedCount}</span>
@@ -249,18 +271,7 @@ export function Grid({ sheet, editMode, onEditCell, diff, onSelectionChange }: G
 
           if (delta) {
             e.preventDefault()
-            const base = focusRef.current ?? anchorRef.current ?? { row: 1, col: 1 }
-            const nextRow = Math.min(Math.max(base.row + delta[0], 1), Math.max(sheet.rowCount, 1))
-            const nextCol = Math.min(Math.max(base.col + delta[1], 1), Math.max(sheet.colCount, 1))
-            if (e.shiftKey && anchorRef.current) {
-              setFocusBoth({ row: nextRow, col: nextCol })
-            } else {
-              setAnchorBoth({ row: nextRow, col: nextCol })
-              setFocusBoth({ row: nextRow, col: nextCol })
-            }
-            // 가상 스크롤이라 화면 밖 행으로 이동하면 실제로 안 보인다 — 대상
-            // 행이 보이게 스크롤한다(열은 가상화 안 해서 다 DOM에 있으므로 안 건드림).
-            rowVirtualizer.scrollToIndex(nextRow - 1, { align: 'auto' })
+            moveFocus(delta[0], delta[1], e.shiftKey)
           } else if ((e.key === 'Enter' || e.key === 'F2') && editMode && anchorRef.current) {
             e.preventDefault()
             openEditOnAnchor()

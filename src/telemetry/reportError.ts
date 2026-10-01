@@ -5,6 +5,8 @@
  * 로컬 개발(`vite dev`)에서는 그 라우트 자체가 없어서 설치하지 않는다 —
  * 개발 중 에러가 실제 사용자 리포트로 잘못 잡히는 걸 막는다.
  */
+const REPORT_ERROR_ENDPOINT = '/report-error'
+
 export function installErrorReporting() {
   if (!import.meta.env.PROD) return
 
@@ -23,14 +25,14 @@ export function reportError(message: string) {
   const payload = JSON.stringify({ message, page: window.location.pathname })
 
   try {
-    if (navigator.sendBeacon('/report-error', new Blob([payload], { type: 'application/json' }))) {
+    if (navigator.sendBeacon(REPORT_ERROR_ENDPOINT, new Blob([payload], { type: 'application/json' }))) {
       return
     }
   } catch {
     // sendBeacon이 없거나 실패하면 fetch로 한 번 더 시도
   }
 
-  fetch('/report-error', {
+  fetch(REPORT_ERROR_ENDPOINT, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: payload,

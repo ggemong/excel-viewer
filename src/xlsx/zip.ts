@@ -14,6 +14,10 @@ const LOCAL_FILE_SIG = 0x04034b50
 const CENTRAL_DIR_SIG = 0x02014b50
 const EOCD_SIG = 0x06054b50
 
+/** ZIP 압축 방식 코드(PKZIP 스펙) — deflate.ts의 압축/해제도 이 값으로 분기한다. */
+export const ZIP_COMPRESSION_STORE = 0
+export const ZIP_COMPRESSION_DEFLATE = 8
+
 export interface ZipEntry {
   name: string
   compressionMethod: number
@@ -70,7 +74,7 @@ export function parseZip(buffer: ArrayBuffer): ZipEntry[] {
     const externalAttributes = view.getUint32(pos + 38, true)
     const localHeaderOffset = view.getUint32(pos + 42, true)
 
-    if (compressionMethod !== 0 && compressionMethod !== 8) {
+    if (compressionMethod !== ZIP_COMPRESSION_STORE && compressionMethod !== ZIP_COMPRESSION_DEFLATE) {
       throw new Error(`지원하지 않는 압축 방식(${compressionMethod})이 있는 zip이에요.`)
     }
 

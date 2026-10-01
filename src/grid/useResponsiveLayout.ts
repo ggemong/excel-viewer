@@ -1,5 +1,8 @@
 import { useEffect, useState } from 'react'
 
+// components.css의 `@media (max-width: 768px)` 블록(툴바 줄바꿈)과 같은 폭이어야
+// 한다 — CSS 미디어쿼리는 이 JS 상수를 가져다 쓸 수 없어서 값을 손으로 맞춰야
+// 한다. 여길 바꾸면 반드시 그쪽도 같이 바꿀 것.
 const MOBILE_BREAKPOINT = '(max-width: 768px)'
 
 /** 768px 미만이면 모바일 카드뷰, 아니면 데스크톱 그리드. */

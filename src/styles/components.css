@@ -42,6 +42,8 @@
 .toolbar-brand { display: flex; align-items: center; gap: var(--sp-2); }
 .toolbar-brand-sub { font-size: var(--fs-xs); color: var(--text-2); font-weight: 500; }
 
+/* src/grid/useResponsiveLayout.ts의 MOBILE_BREAKPOINT와 같은 폭이어야 한다(레이아웃이
+   데스크톱 그리드/모바일 카드뷰로 갈리는 지점과 툴바 줄바꿈이 같이 맞아떨어져야 함). */
 @media (max-width: 768px) {
   .toolbar {
     height: auto;
@@ -66,6 +68,10 @@
 .pill--live { color: var(--live); background: var(--live-soft); }
 .pill--muted { color: var(--text-2); background: var(--bg-sunk); border: 1px solid var(--line); }
 .pill--outline { color: var(--text); background: var(--bg-elev); border: 1px solid var(--line); }
+.pill--accent { color: var(--accent); border-color: var(--accent); }
+.pill--accent .pill-close {
+  border: none; background: none; color: inherit; cursor: pointer; padding: 0; margin-left: 4px;
+}
 
 /* ---------- 버튼 ---------- */
 .btn {
@@ -124,7 +130,10 @@
 }
 .grid-cell {
   user-select: none;
-  height: 34px;
+  /* Grid.tsx의 ROW_HEIGHT와 같은 값이어야 한다 — 가상 스크롤이 이 높이로 행 위치를
+     계산하므로, 둘이 어긋나면 행이 겹치거나 사이가 뜬다. --grid-row-h는 Grid.tsx가
+     인라인으로 주입한다(JS가 유일한 출처). */
+  height: var(--grid-row-h, 34px);
   display: flex;
   align-items: center;
   padding: 0 10px;
