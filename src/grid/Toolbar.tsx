@@ -5,12 +5,6 @@ import { SUPPORTED_EXTENSIONS } from '../state/useWorkbookController'
 interface ToolbarProps {
   fileName: string | null
   onOpenAnother: () => void
-  editMode: boolean
-  onToggleEditMode: () => void
-  isDirty: boolean
-  editedCount: number
-  saving: boolean
-  onSave: () => void
   compareFileName: string | null
   compareLoading: boolean
   onPickCompareFile: (file: File) => void
@@ -20,12 +14,6 @@ interface ToolbarProps {
 export function Toolbar({
   fileName,
   onOpenAnother,
-  editMode,
-  onToggleEditMode,
-  isDirty,
-  editedCount,
-  saving,
-  onSave,
   compareFileName,
   compareLoading,
   onPickCompareFile,
@@ -85,20 +73,6 @@ export function Toolbar({
       <div className="toolbar-group">
         {fileName && (
           <>
-            <button
-              type="button"
-              className={`pill pill--outline${editMode ? ' pill--accent' : ''}`}
-              aria-pressed={editMode}
-              onClick={onToggleEditMode}
-            >
-              {editMode ? '편집 중' : '편집 모드'}
-            </button>
-            {isDirty && (
-              <button type="button" className="btn btn--primary" onClick={onSave} disabled={saving}>
-                {saving ? '저장 중…' : `변경 ${editedCount}개 저장`}
-              </button>
-            )}
-
             {/* 비교 중이면 상태 표시라 접지 않고 항상 보여준다 — 진입 버튼("버전 비교")만 좁은
                 화면에서 오버플로 메뉴로 접는다(아래 .toolbar-overflow). */}
             {compareFileName && (

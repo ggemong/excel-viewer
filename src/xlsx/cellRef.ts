@@ -1,4 +1,4 @@
-/** A1 표기 <-> 1-based {row, col} 변환. 읽기 경로(read.ts/grid)와 저장 경로(patch.ts)가 같이 쓴다. */
+/** A1 표기 <-> 1-based {row, col} 변환. 읽기 경로(read.ts)와 그리드가 같이 쓴다. */
 
 export function columnLetter(oneBasedCol: number): string {
   let s = ''

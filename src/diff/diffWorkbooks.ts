@@ -67,8 +67,8 @@ function diffSheet(base: SheetModel, compare: SheetModel): SheetDiff {
 
 /**
  * base(현재 보고 있는 파일)를 기준으로 compare(비교 대상 파일)와 셀 단위로 비교한다.
- * 저장 경로(patch.ts)와는 완전히 분리된, 순수 비교 로직 — 읽기 경로가 만든
- * WorkbookModel만 본다. v1은 좌표(주소) 기준 비교라, 행이 통째로 삽입/삭제된
+ * 읽기 경로가 만든 WorkbookModel만 보는 순수 비교 로직이다. v1은 좌표(주소) 기준
+ * 비교라, 행이 통째로 삽입/삭제된
  * 경우 그 뒤 모든 셀이 "변경됨"으로 보일 수 있다(알려진 한계).
  */
 export function diffWorkbooks(base: WorkbookModel, compare: WorkbookModel): WorkbookDiff {

@@ -42,8 +42,8 @@
   border-bottom: 1px solid var(--line);
   flex: none;
 }
-/* 줄어드는 건 브랜드 쪽(파일명)만이다 — 액션 쪽(편집모드/저장/비교/오버플로)은 공간이
-   모자라도 안 찌그러지게 flex-shrink:0(아래 .btn/.pill의 white-space:nowrap과 짝). */
+/* 줄어드는 건 브랜드 쪽(파일명)만이다 — 액션 쪽(비교/오버플로)은 공간이 모자라도
+   안 찌그러지게 flex-shrink:0(아래 .btn/.pill의 white-space:nowrap과 짝). */
 .toolbar-group { display: flex; align-items: center; gap: var(--sp-3); flex-shrink: 0; }
 .toolbar-brand { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; flex-shrink: 1; }
 /* 줄바꿈 대신 한 줄을 유지하고 넘치는 파일명은 말줄임표로 — flex-wrap을 쓰던 이전 레이아웃을
@@ -54,15 +54,16 @@
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
-/* 데스크톱에서는 액션을 전부 나열하고, 모바일에서는 "⋯" 오버플로 메뉴만 보여준다
-   (src/grid/useResponsiveLayout.ts의 MOBILE_BREAKPOINT와 같은 폭이어야 한다). */
+/* 데스크톱에서는 액션을 전부 나열하고, 좁은 화면에서는 "⋯" 오버플로 메뉴만 보여준다.
+   그리드 자체는 이제 모든 폭에서 공용(Grid.tsx)이라 이 768px은 툴바 레이아웃 전환
+   전용 기준일 뿐이다. */
 .toolbar-overflow { position: relative; display: none; }
 @media (max-width: 768px) {
   .toolbar-desktop-actions { display: none; }
   .toolbar-overflow { display: block; }
-  /* 로드 전(브랜드만 있는 빈 상태)엔 넓어서 안 걸리적거리지만, 파일을 열면 편집모드/저장/
-     비교 필까지 한 줄에 들어가야 해서 공간을 더 아낀다 — 신뢰 문구는 이 시점엔 우선순위가
-     낮다고 보고 숨긴다(데스크톱은 폭이 넉넉해 항상 보임). */
+  /* 로드 전(브랜드만 있는 빈 상태)엔 넓어서 안 걸리적거리지만, 파일을 열면 비교 필·
+     오버플로 버튼까지 한 줄에 들어가야 해서 공간을 더 아낀다 — 신뢰 문구는 이 시점엔
+     우선순위가 낮다고 보고 숨긴다(데스크톱은 폭이 넉넉해 항상 보임). */
   /* .toolbar를 같이 붙여 명시도를 올린다 — 이 규칙이 .pill { display: inline-flex }
      보다 파일 순서상 앞에 있어서, 명시도가 같으면(클래스 1개 vs 1개) 나중에 나오는
      .pill 쪽이 이겨버린다(실제로 겪음: 미디어쿼리 안이어도 순서가 이기는 걸 깜빡했다). */
@@ -222,25 +223,9 @@
   cursor: pointer;
   user-select: none;
 }
-.grid-cell[data-editable="true"] {
-  cursor: text;
-}
-.grid-cell[data-editable="true"]:hover {
-  background: var(--accent-soft);
-  outline: 1px solid var(--accent);
-  outline-offset: -1px;
-}
-.grid-cell[data-editable="true"]:active {
-  background: var(--accent-soft);
-}
 .grid-cell[data-merged="true"] {
   background: var(--bg-sunk);
   pointer-events: none;
-}
-.grid-cell[data-readonly="true"] {
-  cursor: not-allowed;
-  color: var(--text-3);
-  font-style: italic;
 }
 .grid-cell[data-selected="true"] {
   background: var(--accent-soft);
@@ -286,14 +271,6 @@
   color: var(--text-3);
   text-decoration: line-through;
 }
-.grid-cell--input {
-  border: none;
-  outline: 2px solid var(--accent);
-  outline-offset: -2px;
-  background: var(--bg-elev);
-  font-family: var(--font);
-}
-
 /* ---------- 요약바 ---------- */
 .summary-bar {
   height: 44px;
@@ -330,58 +307,6 @@
   color: var(--text);
   background: var(--bg-sunk);
   border-bottom-color: var(--accent);
-}
-
-/* ---------- 모바일 카드뷰 ---------- */
-.card-list {
-  flex-grow: 1; min-height: 0; overflow: auto;
-  overscroll-behavior-y: contain;
-  padding: var(--sp-4) calc(var(--sp-4) + env(safe-area-inset-right)) calc(var(--sp-4) + env(safe-area-inset-bottom)) calc(var(--sp-4) + env(safe-area-inset-left));
-  display: flex; flex-direction: column; gap: var(--sp-3);
-}
-.row-card {
-  background: var(--bg-elev);
-  border: 1px solid var(--line);
-  border-radius: var(--r-md);
-  padding: var(--sp-3) var(--sp-4);
-  display: flex; flex-direction: column; gap: 6px;
-}
-.row-card-field {
-  display: flex; justify-content: space-between; gap: var(--sp-3);
-  font-size: var(--fs-xs);
-}
-.row-card-field[data-editable="true"]:active {
-  background: var(--accent-soft);
-  border-radius: var(--r-sm);
-  margin: 0 -6px;
-  padding: 2px 6px;
-}
-.row-card-field-label {
-  color: var(--text-3);
-  white-space: nowrap;
-}
-.row-card-field-value {
-  color: var(--text);
-  text-align: right;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.row-card-field[data-diff="changed"] {
-  background: var(--accent-soft);
-  border-radius: var(--r-sm);
-  margin: 0 -6px;
-  padding: 2px 6px;
-}
-.row-card-field[data-diff="added"] {
-  background: var(--live-soft);
-  border-radius: var(--r-sm);
-  margin: 0 -6px;
-  padding: 2px 6px;
-}
-.row-card-field[data-diff="removed"] .row-card-field-value {
-  color: var(--text-3);
-  text-decoration: line-through;
 }
 
 /* ---------- 앱 셸 레이아웃 ---------- */
