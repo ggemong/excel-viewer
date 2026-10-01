@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { cellStyleProps, extractCellStyle } from './cellStyle'
+import type { ThemeColors } from './themeColor'
+
+const theme: ThemeColors = {
+  slots: ['#FFFFFF', '#000000', '#EEECE1', '#1F497D', '#4F81BD', '', '', '', '', '', '', ''],
+}
 
 describe('extractCellStyle', () => {
   it('서식이 전혀 없으면 null', () => {
@@ -28,6 +33,24 @@ describe('extractCellStyle', () => {
 
   it('굵게만 있어도(배경/글자색 없이) null이 아니다', () => {
     expect(extractCellStyle({ font: { bold: true } })).toEqual({ bg: null, color: null, bold: true, italic: false })
+  })
+
+  it('argb가 없으면 테마 인덱스로 배경색을 해석한다(Excel 기본 팔레트가 실제로 이 경우)', () => {
+    const style = extractCellStyle({ fill: { type: 'pattern', pattern: 'solid', fgColor: { theme: 4 } } }, theme)
+    expect(style?.bg).toBe('#4F81BD')
+  })
+
+  it('테마 팔레트를 안 넘기면(theme 인자 생략) 테마 색은 그냥 무시한다', () => {
+    const style = extractCellStyle({ fill: { type: 'pattern', pattern: 'solid', fgColor: { theme: 4 } } })
+    expect(style?.bg ?? null).toBeNull()
+  })
+
+  it('argb와 theme가 둘 다 있으면 argb가 우선(더 구체적인 지정)', () => {
+    const style = extractCellStyle(
+      { fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFABCDEF', theme: 4 } } },
+      theme,
+    )
+    expect(style?.bg).toBe('#ABCDEF')
   })
 })
 

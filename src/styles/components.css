@@ -271,6 +271,14 @@
   color: var(--text-3);
   text-decoration: line-through;
 }
+.grid-cell-link {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: currentColor;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* ---------- 요약바 ---------- */
 .summary-bar {
   height: 44px;

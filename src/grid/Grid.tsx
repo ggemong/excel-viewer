@@ -271,7 +271,13 @@ export function Grid({ sheet, diff, onSelectionChange }: GridProps) {
                         onMouseDown={(e) => beginSelect(rowNum, col, e.shiftKey)}
                         onMouseEnter={() => extendSelect(rowNum, col)}
                       >
-                        {formatCellValue(cell)}
+                        {cell?.hyperlink ? (
+                          <a href={cell.hyperlink} target="_blank" rel="noopener noreferrer" className="grid-cell-link">
+                            {formatCellValue(cell)}
+                          </a>
+                        ) : (
+                          formatCellValue(cell)
+                        )}
                       </div>,
                     )
 

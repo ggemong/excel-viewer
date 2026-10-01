@@ -13,6 +13,11 @@ export interface CellModel {
   numFmt: string | null
   /** 배경색·글자색·굵게/기울임(표시 전용) — src/xlsx/cellStyle.ts 참고. CSV는 항상 null. */
   style: CellStyle | null
+  /**
+   * http/https/mailto 스킴의 하이퍼링크 URL(그 외 스킴·내부(같은 통합문서) 링크는
+   * null — src/xlsx/read.ts의 cellToModel 참고). CSV는 항상 null.
+   */
+  hyperlink: string | null
 }
 
 export interface SheetModel {

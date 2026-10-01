@@ -4,13 +4,16 @@
  * 여기서 읽은 값은 오직 렌더링에만 쓰인다.
  *
  * v1 범위: 단색 배경(fill pattern "solid")과 글자색/굵게/기울임만 다룬다. 테두리·정렬·
- * 조건부서식·테마 색상(theme/tint, argb가 아니라 팔레트 인덱스로 지정된 색)은 범위 밖이다
- * — formatValue.ts가 numFmt를 "자주 쓰이는 것만" 다루는 것과 같은 절충이다.
+ * 조건부서식은 범위 밖이다 — formatValue.ts가 numFmt를 "자주 쓰이는 것만" 다루는
+ * 것과 같은 절충이다. 색상은 직접 RGB(argb)와 테마 색상(theme+tint, src/xlsx/
+ * themeColor.ts) 둘 다 다룬다 — 실사용 파일 대부분이 테마 색상이라 이것만 빠지면
+ * 색이 거의 안 보인다.
  *
  * cellStyleProps는 Grid.tsx가 쓴다 — "배경은 선택/비교 강조색에 밀리고 글자색/굵기는
  * 유지한다"는 규칙을 셀 렌더링 코드에 직접 섞지 않고 여기 모아뒀다.
  */
 import type { CSSProperties } from 'react'
+import { resolveThemeColor, type ThemeColors } from './themeColor'
 
 export interface CellStyle {
   bg: string | null
@@ -19,26 +22,37 @@ export interface CellStyle {
   italic: boolean
 }
 
-interface ArgbColor {
+interface ExcelColor {
   argb?: string
+  theme?: number
+  tint?: number
 }
 
 interface CellFill {
   type?: string
   pattern?: string
-  fgColor?: ArgbColor
+  fgColor?: ExcelColor
 }
 
 interface CellFont {
   bold?: boolean
   italic?: boolean
-  color?: ArgbColor
+  color?: ExcelColor
 }
 
-/** ExcelJS의 ARGB(8자리 hex, 앞 2자리는 투명도) -> CSS #RRGGBB. 테마 색상(argb 없음)은 null. */
+/** ExcelJS의 ARGB(8자리 hex, 앞 2자리는 투명도) -> CSS #RRGGBB. */
 function argbToHex(argb: string | undefined): string | null {
   if (!argb || argb.length < 6) return null
   return `#${argb.slice(-6)}`
+}
+
+/** 직접 RGB(argb)를 우선 쓰고, 없으면 테마 인덱스(theme+tint)로 해석한다. 둘 다 없으면 null. */
+function resolveColor(color: ExcelColor | undefined, theme: ThemeColors | null): string | null {
+  if (!color) return null
+  const direct = argbToHex(color.argb)
+  if (direct) return direct
+  if (theme && color.theme !== undefined) return resolveThemeColor(theme, color.theme, color.tint)
+  return null
 }
 
 function luminance(hex: string): number {
@@ -56,13 +70,16 @@ function contrastColor(bgHex: string): string {
   return luminance(bgHex) > 0.5 ? '#1a1a1a' : '#f5f5f5'
 }
 
-/** @param cell ExcelJS Cell — fill/font만 쓰므로 그 둘만 받는 최소 타입으로 받는다(테스트에서 실제 Cell 없이도 검증 가능). */
-export function extractCellStyle(cell: { fill?: CellFill; font?: CellFont }): CellStyle | null {
+/**
+ * @param cell ExcelJS Cell — fill/font만 쓰므로 그 둘만 받는 최소 타입으로 받는다(테스트에서 실제 Cell 없이도 검증 가능).
+ * @param theme 워크북 하나당 한 번만 파싱해서 넘겨받는다(src/xlsx/read.ts) — 셀마다 테마 XML을 다시 파싱하지 않기 위해서.
+ */
+export function extractCellStyle(cell: { fill?: CellFill; font?: CellFont }, theme: ThemeColors | null = null): CellStyle | null {
   const fill = cell.fill
-  const bg = fill?.type === 'pattern' && fill.pattern === 'solid' ? argbToHex(fill.fgColor?.argb) : null
+  const bg = fill?.type === 'pattern' && fill.pattern === 'solid' ? resolveColor(fill.fgColor, theme) : null
 
   const font = cell.font
-  const explicitColor = argbToHex(font?.color?.argb)
+  const explicitColor = resolveColor(font?.color, theme)
   const color = explicitColor ?? (bg ? contrastColor(bg) : null)
   const bold = Boolean(font?.bold)
   const italic = Boolean(font?.italic)
