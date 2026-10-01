@@ -11,6 +11,11 @@ const sheet: SheetModel = {
   rowCount: 3,
   colCount: 2,
   merges: [],
+  colWidths: [],
+  rowHeights: [],
+  hiddenCols: [],
+  hiddenRows: [],
+  frozen: null,
   rows: [
     [cell('Name'), cell('Amount')],
     [cell('a "quote"\ttab'), cell(100)],

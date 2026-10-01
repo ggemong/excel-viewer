@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { normalizeRange, type CellRange } from '../clipboard/buildClipboardPayload'
 import { useClipboardCopy } from '../clipboard/useClipboardCopy'
@@ -9,11 +9,14 @@ import { cellStyleProps } from '../xlsx/cellStyle'
 import { formatCellValue } from '../xlsx/formatValue'
 import type { SheetModel } from '../xlsx/types'
 
-/** 가상 스크롤의 행 높이 추정치 — components.css의 .grid-cell에 --grid-row-h로 주입해서 실제 렌더 높이와 묶는다(아래 return문). */
-const ROW_HEIGHT = 34
+/**
+ * 파일에 행높이가 없을 때만 쓰는 비상 fallback(정상 동작이면 안 쓰임 — read.ts가
+ * 항상 sheet.rowHeights를 rowCount만큼 채워서 준다). 열너비/행높이는 이제
+ * sheet.colWidths/rowHeights(파일 값 기반, src/xlsx/columnWidth.ts)를 쓴다.
+ */
+const ROW_HEIGHT_FALLBACK = 34
 const HEADER_HEIGHT = 32
 const ROW_NUM_WIDTH = 44
-const COL_WIDTH = 120
 
 interface GridProps {
   sheet: SheetModel
@@ -61,11 +64,14 @@ export function Grid({ sheet, diff, onSelectionChange }: GridProps) {
   const rowVirtualizer = useVirtualizer({
     count: sheet.rowCount,
     getScrollElement: () => scrollRef.current,
-    estimateSize: () => ROW_HEIGHT,
+    // 모든 행 높이를 파일 읽을 때 미리 다 알고 있어서(런타임 측정이 아님) 이
+    // 추정치가 처음부터 정확하다 — 가변 가상화에서 흔한 "늦은 재측정으로 스크롤
+    // 위치가 튀는" 문제가 없다.
+    estimateSize: (index) => sheet.rowHeights[index] ?? ROW_HEIGHT_FALLBACK,
     overscan: 12,
   })
 
-  const gridTemplateColumns = `${ROW_NUM_WIDTH}px repeat(${sheet.colCount}, ${COL_WIDTH}px)`
+  const gridTemplateColumns = `${ROW_NUM_WIDTH}px ${sheet.colWidths.map((w) => `${w}px`).join(' ')}`
   const selection = useMemo(() => (anchor && focus ? normalizeRange(anchor, focus) : null), [anchor, focus])
 
   useEffect(() => {
@@ -132,7 +138,7 @@ export function Grid({ sheet, diff, onSelectionChange }: GridProps) {
   }
 
   return (
-    <div className="grid-card" style={{ '--grid-row-h': `${ROW_HEIGHT}px` } as CSSProperties}>
+    <div className="grid-card">
       {diff && (diff.changedCount > 0 || diff.addedCount > 0 || diff.removedCount > 0) && (
         <div className="grid-selection-bar" style={{ left: 8, right: 'auto' }}>
           <span data-diff="changed">변경 {diff.changedCount}</span>
@@ -196,6 +202,7 @@ export function Grid({ sheet, diff, onSelectionChange }: GridProps) {
           {rowVirtualizer.getVirtualItems().map((virtualRow) => {
             const row = sheet.rows[virtualRow.index]
             const rowNum = virtualRow.index + 1
+            const rowHeight = sheet.rowHeights[virtualRow.index] ?? ROW_HEIGHT_FALLBACK
             return (
               <div
                 key={virtualRow.key}
@@ -206,6 +213,7 @@ export function Grid({ sheet, diff, onSelectionChange }: GridProps) {
                   top: 0,
                   left: 0,
                   width: '100%',
+                  height: rowHeight,
                   transform: `translateY(${virtualRow.start}px)`,
                 }}
               >

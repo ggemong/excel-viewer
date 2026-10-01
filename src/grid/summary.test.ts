@@ -11,6 +11,11 @@ const sheet: SheetModel = {
   rowCount: 2,
   colCount: 2,
   merges: [],
+  colWidths: [],
+  rowHeights: [],
+  hiddenCols: [],
+  hiddenRows: [],
+  frozen: null,
   rows: [
     [cell('Text'), cell(10)],
     [cell('More text'), cell(20)],

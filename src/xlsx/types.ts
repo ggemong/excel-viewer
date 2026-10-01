@@ -27,6 +27,15 @@ export interface SheetModel {
   /** rows[rowIndex][colIndex], 0-based. 빈 셀은 undefined. */
   rows: (CellModel | undefined)[][]
   merges: string[] // "B2:C3" 형태
+  /** px, 0-based(colWidths[0] = A열). CSV는 전부 기본값. */
+  colWidths: number[]
+  /** px, 0-based(rowHeights[0] = 1행). CSV는 전부 기본값. */
+  rowHeights: number[]
+  /** true인 인덱스는 숨긴 열/행 — Grid.tsx가 건너뛴다(Phase D). */
+  hiddenCols: boolean[]
+  hiddenRows: boolean[]
+  /** 틀고정된 행 수(화면 최상단에 항상 보이는 행). 없으면 null. 열고정은 범위 밖(D-006 계획 참고). */
+  frozen: { rows: number } | null
 }
 
 export interface WorkbookModel {

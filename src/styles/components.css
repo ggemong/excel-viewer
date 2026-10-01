@@ -183,10 +183,10 @@
 }
 .grid-cell {
   user-select: none;
-  /* Grid.tsx의 ROW_HEIGHT와 같은 값이어야 한다 — 가상 스크롤이 이 높이로 행 위치를
-     계산하므로, 둘이 어긋나면 행이 겹치거나 사이가 뜬다. --grid-row-h는 Grid.tsx가
-     인라인으로 주입한다(JS가 유일한 출처). */
-  height: var(--grid-row-h, 34px);
+  /* 행마다 높이가 다를 수 있어(파일에 저장된 실제 행높이) 고정값 대신 부모인 행
+     래퍼의 높이를 그대로 채운다 — 그 래퍼의 실제 px 높이는 Grid.tsx가 매 행마다
+     sheet.rowHeights[i] 기준으로 인라인 style.height로 직접 지정한다. */
+  height: 100%;
   display: flex;
   align-items: center;
   padding: 0 10px;

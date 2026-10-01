@@ -1,7 +1,14 @@
 import { columnLetter } from './cellRef'
 import { extractCellStyle } from './cellStyle'
+import { excelColumnWidthToPx, excelPointsToPx, measureDefaultFontWidth } from './columnWidth'
 import { parseTheme, type ThemeColors } from './themeColor'
 import type { CellModel, SheetModel, WorkbookModel } from './types'
+
+// 파일에 열너비/행높이가 명시 안 된(사용자가 한 번도 손 안 댄) 열/행에 쓰는 Excel
+// 통상 기본값 — 실제로 <col>/<row> 항목 자체가 없는 경우가 흔해서(기본값인 열/행은
+// Excel이 아예 안 적음) ExcelJS가 undefined를 돌려줄 때를 대비해 필요하다.
+const DEFAULT_COLUMN_CHAR_WIDTH = 8.43
+const DEFAULT_ROW_HEIGHT_PT = 15
 
 /** 사용자가 올린 임의 파일을 그대로 열어주는 뷰어라, 하이퍼링크는 이 스킴만 신뢰한다 —
  * javascript:/file: 같은 스킴으로 된 악성 링크가 그대로 클릭 가능한 <a>가 되는 걸 막는다. */
@@ -41,14 +48,21 @@ async function readXlsx(file: File): Promise<WorkbookModel> {
   const themeXml = (workbook.model as unknown as { themes?: Record<string, string> }).themes?.theme1
   const theme = themeXml ? parseTheme(themeXml) : null
 
+  const mdw = measureDefaultFontWidth()
+
   const sheets: SheetModel[] = []
   workbook.eachSheet((worksheet) => {
     const rowCount = worksheet.rowCount
     const colCount = worksheet.columnCount
     const rows: (CellModel | undefined)[][] = []
+    const rowHeights: number[] = []
+    const hiddenRows: boolean[] = []
 
     for (let r = 1; r <= rowCount; r++) {
       const row = worksheet.getRow(r)
+      rowHeights.push(excelPointsToPx(row.height ?? DEFAULT_ROW_HEIGHT_PT))
+      hiddenRows.push(Boolean(row.hidden))
+
       const rowCells: (CellModel | undefined)[] = []
       for (let c = 1; c <= colCount; c++) {
         const cell = row.getCell(c)
@@ -61,6 +75,20 @@ async function readXlsx(file: File): Promise<WorkbookModel> {
       rows.push(rowCells)
     }
 
+    const colWidths: number[] = []
+    const hiddenCols: boolean[] = []
+    for (let c = 1; c <= colCount; c++) {
+      const col = worksheet.getColumn(c)
+      colWidths.push(excelColumnWidthToPx(col.width ?? DEFAULT_COLUMN_CHAR_WIDTH, mdw))
+      hiddenCols.push(Boolean(col.hidden))
+    }
+
+    // ExcelJS의 views 타입 선언(Array<Partial<WorksheetView>>)은 state로 좁혀도
+    // ySplit이 안 보인다(frozen 전용 필드인데 Partial이 판별 유니온 좁히기를 못
+    // 살림) — 필요한 필드만 최소 타입으로 캐스팅한다.
+    const frozenView = worksheet.views?.find((v) => v.state === 'frozen') as { ySplit?: number } | undefined
+    const frozen = frozenView?.ySplit ? { rows: frozenView.ySplit } : null
+
     const merges = worksheet.model.merges ?? []
 
     sheets.push({
@@ -69,6 +97,11 @@ async function readXlsx(file: File): Promise<WorkbookModel> {
       colCount,
       rows,
       merges,
+      colWidths,
+      rowHeights,
+      hiddenCols,
+      hiddenRows,
+      frozen,
     })
   })
 
@@ -131,15 +164,26 @@ async function readCsv(file: File): Promise<WorkbookModel> {
     })),
   )
 
+  const rowCount = rows.length
+  const colCount = rows.reduce((max, row) => Math.max(max, row.length), 0)
+  // CSV는 열너비/행높이/숨김/틀고정 개념 자체가 없다 — 전부 Excel 기본값 하나로 균일하게 채운다.
+  const defaultColWidth = excelColumnWidthToPx(DEFAULT_COLUMN_CHAR_WIDTH, measureDefaultFontWidth())
+  const defaultRowHeight = excelPointsToPx(DEFAULT_ROW_HEIGHT_PT)
+
   return {
     fileName: file.name,
     sheets: [
       {
         name: 'Sheet1',
-        rowCount: rows.length,
-        colCount: rows.reduce((max, row) => Math.max(max, row.length), 0),
+        rowCount,
+        colCount,
         rows,
         merges: [],
+        colWidths: Array(colCount).fill(defaultColWidth),
+        rowHeights: Array(rowCount).fill(defaultRowHeight),
+        hiddenCols: Array(colCount).fill(false),
+        hiddenRows: Array(rowCount).fill(false),
+        frozen: null,
       },
     ],
   }
