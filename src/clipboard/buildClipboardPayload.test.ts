@@ -3,7 +3,7 @@ import { buildHtmlTable, buildTsv, normalizeRange, parseTsv } from './buildClipb
 import type { SheetModel } from '../xlsx/types'
 
 function cell(value: string | number | null) {
-  return { address: 'A1', value, formula: null, numFmt: null }
+  return { address: 'A1', value, formula: null, numFmt: null, style: null }
 }
 
 const sheet: SheetModel = {

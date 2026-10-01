@@ -31,7 +31,10 @@ function updateSheetCell(
   const rowArr = (rows[row - 1] ?? []).slice()
   const prev = rowArr[col - 1]
 
-  rowArr[col - 1] = newValue === null ? undefined : { address: cellAddress(row, col), value: newValue, formula: null, numFmt: prev?.numFmt ?? null }
+  rowArr[col - 1] =
+    newValue === null
+      ? undefined
+      : { address: cellAddress(row, col), value: newValue, formula: null, numFmt: prev?.numFmt ?? null, style: prev?.style ?? null }
 
   rows[row - 1] = rowArr
   sheets[sheetIndex] = { ...sheet, rows }

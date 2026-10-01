@@ -3,6 +3,7 @@ import { useVirtualizer } from '@tanstack/react-virtual'
 import type { SheetDiff } from '../diff/diffWorkbooks'
 import { isMergeMaster, useMergeLookup } from './useMergeLookup'
 import { cellAddress, columnLetter } from '../xlsx/cellRef'
+import { cellStyleProps } from '../xlsx/cellStyle'
 import { formatCellValue } from '../xlsx/formatValue'
 import type { CellModel, SheetModel } from '../xlsx/types'
 
@@ -109,6 +110,10 @@ export function GridCards({ sheet, editMode, onEditCell, diff }: GridCardsProps)
                   )
                 }
 
+                // .row-card-field-value가 색을 자기 CSS 클래스로 직접 지정해서(오른쪽
+                // 정렬 등) 부모 div의 인라인 색은 상속되지 않는다 — 그래서 배경은
+                // 칸 전체(div)에, 글자색/굵기/기울임은 값 span에 따로 입힌다.
+                const { background, ...valueStyle } = cellStyleProps(cell?.style ?? null, Boolean(hasDiff))
                 return (
                   <div
                     className="row-card-field"
@@ -117,12 +122,15 @@ export function GridCards({ sheet, editMode, onEditCell, diff }: GridCardsProps)
                     data-diff={hasDiff ? cellDiff.status : undefined}
                     title={merge ? '병합된 셀은 이 버전에서 수정할 수 없어요' : undefined}
                     onClick={() => startEdit(address, cell, Boolean(merge))}
+                    style={{ background }}
                   >
                     <span className="row-card-field-label">
                       {label}
                       {merge && merge.c1 > merge.c0 ? ` (${merge.c1 - merge.c0 + 1}칸 병합)` : ''}
                     </span>
-                    <span className="row-card-field-value">{formatCellValue(cell) || (editMode ? '—' : '')}</span>
+                    <span className="row-card-field-value" style={valueStyle}>
+                      {formatCellValue(cell) || (editMode ? '—' : '')}
+                    </span>
                   </div>
                 )
               })}

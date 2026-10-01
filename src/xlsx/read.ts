@@ -1,4 +1,5 @@
 import { columnLetter } from './cellRef'
+import { extractCellStyle } from './cellStyle'
 import type { CellModel, SheetModel, WorkbookModel } from './types'
 
 /**
@@ -74,6 +75,7 @@ function cellToModel(cell: import('exceljs').Cell): CellModel {
     value,
     formula,
     numFmt: cell.numFmt ?? null,
+    style: extractCellStyle(cell),
   }
 }
 
@@ -95,6 +97,7 @@ async function readCsv(file: File): Promise<WorkbookModel> {
       value: value === '' ? null : value,
       formula: null,
       numFmt: null,
+      style: null,
     })),
   )
 

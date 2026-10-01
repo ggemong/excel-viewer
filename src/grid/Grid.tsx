@@ -13,6 +13,7 @@ import { useClipboardCopy } from '../clipboard/useClipboardCopy'
 import type { SheetDiff } from '../diff/diffWorkbooks'
 import { isMergeMaster, useMergeLookup } from './useMergeLookup'
 import { cellAddress, columnLetter } from '../xlsx/cellRef'
+import { cellStyleProps } from '../xlsx/cellStyle'
 import { formatCellValue } from '../xlsx/formatValue'
 import type { CellModel, SheetModel } from '../xlsx/types'
 
@@ -432,6 +433,10 @@ export function Grid({ sheet, editMode, onEditCell, diff, onSelectionChange }: G
                           style={{
                             justifyContent: isNumeric ? 'flex-end' : 'flex-start',
                             gridColumn: colSpan > 1 ? `span ${colSpan}` : undefined,
+                            ...cellStyleProps(
+                              cell?.style ?? null,
+                              inRange(selection, rowNum, col) || Boolean(cellDiff && cellDiff.status !== 'unchanged'),
+                            ),
                           }}
                           onMouseDown={(e) => beginSelect(rowNum, col, e.shiftKey)}
                           onMouseEnter={() => extendSelect(rowNum, col)}

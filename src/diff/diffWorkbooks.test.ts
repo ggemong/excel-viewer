@@ -3,7 +3,7 @@ import { diffWorkbooks } from './diffWorkbooks'
 import type { WorkbookModel } from '../xlsx/types'
 
 function cell(value: string | number | null) {
-  return { address: 'A1', value, formula: null, numFmt: null }
+  return { address: 'A1', value, formula: null, numFmt: null, style: null }
 }
 
 function wb(sheets: WorkbookModel['sheets']): WorkbookModel {

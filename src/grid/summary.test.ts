@@ -3,7 +3,7 @@ import type { SheetModel } from '../xlsx/types'
 import { computeSummary } from './summary'
 
 function cell(value: string | number | null) {
-  return { address: 'A1', value, formula: null, numFmt: null }
+  return { address: 'A1', value, formula: null, numFmt: null, style: null }
 }
 
 const sheet: SheetModel = {
