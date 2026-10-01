@@ -31,31 +31,72 @@
 
 /* ---------- 앱 툴바 ---------- */
 .toolbar {
-  height: var(--bar-h);
+  /* 고정 height가 아니라 min-height + padding-top: 홈 화면 설치 상태(standalone)에서
+     노치/상태바 뒤로 내용이 가려지지 않게 env(safe-area-inset-top)만큼 밀어낸다 —
+     일반 브라우저 탭에서는 0이라 기존과 똑같이 보인다. */
+  min-height: var(--bar-h);
   display: flex; align-items: center; justify-content: space-between;
-  padding: 0 var(--sp-5); gap: var(--sp-4);
+  padding: env(safe-area-inset-top) calc(var(--sp-5) + env(safe-area-inset-right)) 0 calc(var(--sp-5) + env(safe-area-inset-left));
+  gap: var(--sp-4);
   background: var(--bg-elev);
   border-bottom: 1px solid var(--line);
   flex: none;
 }
-.toolbar-group { display: flex; align-items: center; gap: var(--sp-3); }
-.toolbar-brand { display: flex; align-items: center; gap: var(--sp-2); }
-.toolbar-brand-sub { font-size: var(--fs-xs); color: var(--text-2); font-weight: 500; }
+/* 줄어드는 건 브랜드 쪽(파일명)만이다 — 액션 쪽(편집모드/저장/비교/오버플로)은 공간이
+   모자라도 안 찌그러지게 flex-shrink:0(아래 .btn/.pill의 white-space:nowrap과 짝). */
+.toolbar-group { display: flex; align-items: center; gap: var(--sp-3); flex-shrink: 0; }
+.toolbar-brand { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; flex-shrink: 1; }
+/* 줄바꿈 대신 한 줄을 유지하고 넘치는 파일명은 말줄임표로 — flex-wrap을 쓰던 이전 레이아웃을
+   벗어나면서 긴 파일명이 그냥 넘쳐흐를 수 있어 추가했다. */
+.toolbar-filename {
+  font-size: var(--fs-xs); color: var(--text-2); font-weight: 500;
+  flex: 1 1 auto; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 
-/* src/grid/useResponsiveLayout.ts의 MOBILE_BREAKPOINT와 같은 폭이어야 한다(레이아웃이
-   데스크톱 그리드/모바일 카드뷰로 갈리는 지점과 툴바 줄바꿈이 같이 맞아떨어져야 함). */
+/* 데스크톱에서는 액션을 전부 나열하고, 모바일에서는 "⋯" 오버플로 메뉴만 보여준다
+   (src/grid/useResponsiveLayout.ts의 MOBILE_BREAKPOINT와 같은 폭이어야 한다). */
+.toolbar-overflow { position: relative; display: none; }
 @media (max-width: 768px) {
-  .toolbar {
-    height: auto;
-    min-height: var(--bar-h);
-    flex-wrap: wrap;
-    row-gap: 6px;
-    padding: 8px var(--sp-4);
-  }
-  .toolbar-group {
-    flex-wrap: wrap;
-    row-gap: 6px;
-  }
+  .toolbar-desktop-actions { display: none; }
+  .toolbar-overflow { display: block; }
+  /* 로드 전(브랜드만 있는 빈 상태)엔 넓어서 안 걸리적거리지만, 파일을 열면 편집모드/저장/
+     비교 필까지 한 줄에 들어가야 해서 공간을 더 아낀다 — 신뢰 문구는 이 시점엔 우선순위가
+     낮다고 보고 숨긴다(데스크톱은 폭이 넉넉해 항상 보임). */
+  /* .toolbar를 같이 붙여 명시도를 올린다 — 이 규칙이 .pill { display: inline-flex }
+     보다 파일 순서상 앞에 있어서, 명시도가 같으면(클래스 1개 vs 1개) 나중에 나오는
+     .pill 쪽이 이겨버린다(실제로 겪음: 미디어쿼리 안이어도 순서가 이기는 걸 깜빡했다). */
+  .toolbar .pill--live-loaded { display: none; }
+}
+.toolbar-overflow-trigger {
+  padding: 0 var(--sp-3);
+  font-size: var(--fs-lg);
+  line-height: 1;
+}
+.toolbar-overflow-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 10;
+  display: flex; flex-direction: column;
+  min-width: 160px;
+  padding: var(--sp-2);
+  border-radius: var(--r-md);
+  background: var(--bg-elev);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-1);
+}
+.toolbar-overflow-item {
+  padding: var(--sp-3) var(--sp-3);
+  border-radius: var(--r-sm);
+  text-align: left;
+  font-size: var(--fs-sm);
+  color: var(--text);
+  background: transparent;
+  border: none;
+}
+.toolbar-overflow-item:active {
+  background: var(--bg-sunk);
 }
 
 /* ---------- 배지/필 ---------- */
@@ -82,11 +123,17 @@
   border: none;
   font-size: var(--fs-sm); font-weight: 700;
   font-family: var(--font);
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 .btn--primary { background: var(--accent); color: var(--on-accent); }
 .btn--primary:hover { background: var(--accent-hover); }
+.btn--primary:active { background: var(--accent-hover); transform: scale(0.97); }
 .btn--ghost { background: transparent; color: var(--text-2); }
 .btn--ghost:hover { background: var(--bg-sunk); }
+.btn--ghost:active { background: var(--bg-sunk); transform: scale(0.97); }
+/* 기본 웹 버튼은 터치에 즉각 반응이 없어 네이티브 느낌이 덜하다 — 눌림 피드백 추가. */
+.pill--outline:active { background: var(--bg-sunk); }
 
 /* ---------- 드롭존 (빈 상태) ---------- */
 .dropzone {
@@ -127,6 +174,11 @@
 .grid-scroll {
   flex-grow: 1;
   overflow: auto;
+  /* body가 아니라 실제로 스크롤되는 요소에 직접 걸어야 풀투리프레시/바운스가 억제된다. */
+  overscroll-behavior-y: contain;
+  padding-bottom: env(safe-area-inset-bottom);
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
 }
 .grid-cell {
   user-select: none;
@@ -177,6 +229,9 @@
   background: var(--accent-soft);
   outline: 1px solid var(--accent);
   outline-offset: -1px;
+}
+.grid-cell[data-editable="true"]:active {
+  background: var(--accent-soft);
 }
 .grid-cell[data-merged="true"] {
   background: var(--bg-sunk);
@@ -280,7 +335,8 @@
 /* ---------- 모바일 카드뷰 ---------- */
 .card-list {
   flex-grow: 1; min-height: 0; overflow: auto;
-  padding: var(--sp-4);
+  overscroll-behavior-y: contain;
+  padding: var(--sp-4) calc(var(--sp-4) + env(safe-area-inset-right)) calc(var(--sp-4) + env(safe-area-inset-bottom)) calc(var(--sp-4) + env(safe-area-inset-left));
   display: flex; flex-direction: column; gap: var(--sp-3);
 }
 .row-card {
@@ -293,6 +349,12 @@
 .row-card-field {
   display: flex; justify-content: space-between; gap: var(--sp-3);
   font-size: var(--fs-xs);
+}
+.row-card-field[data-editable="true"]:active {
+  background: var(--accent-soft);
+  border-radius: var(--r-sm);
+  margin: 0 -6px;
+  padding: 2px 6px;
 }
 .row-card-field-label {
   color: var(--text-3);

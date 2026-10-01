@@ -32,3 +32,11 @@ button, input {
 button {
   cursor: pointer;
 }
+
+/* 홈 화면에 설치했을 때 네이티브 앱에 가깝게 느껴지도록 — 실제 스크롤 바운스
+   억제는 .grid-scroll/.card-list에 직접 건다(body/html은 스크롤 요소가 아니라
+   여기 걸어봤자 효과 없음, 구현 계획 참고). 탭 피드백 관련 토큰은 components.css. */
+button, .pill, .row-card, .grid-cell {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
