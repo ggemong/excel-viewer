@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { normalizeRange, type CellRange } from '../clipboard/buildClipboardPayload'
 import { useClipboardCopy } from '../clipboard/useClipboardCopy'
@@ -61,17 +61,50 @@ export function Grid({ sheet, diff, onSelectionChange }: GridProps) {
   const { copyRange, copied } = useClipboardCopy()
   const mergeLookup = useMergeLookup(sheet.merges)
 
+  // 숨긴 열은 그리드 트랙 자체를 안 만든다(Excel이 숨긴 열을 아예 안 보여주는 것과
+  // 동일) — 선택·복사는 여전히 숨긴 열을 포함한 논리적 범위(행/열 번호)로 동작하고,
+  // 여기서 걸러내는 건 오직 "화면에 그릴 열의 목록"뿐이다.
+  const visibleColNumbers = useMemo(
+    () => Array.from({ length: sheet.colCount }, (_, i) => i + 1).filter((c) => !sheet.hiddenCols[c - 1]),
+    [sheet.colCount, sheet.hiddenCols],
+  )
+
+  // 틀고정 행은 가상화 목록에서 빼서 열 헤더 바로 아래 별도의 고정 블록으로 그린다
+  // (ySplit 아래부터만 가상 스크롤). 숨긴 행은 고정 블록/스크롤 블록 양쪽 모두에서
+  // 제외한다.
+  const frozenRowCount = sheet.frozen?.rows ?? 0
+  const frozenRowNumbers = useMemo(
+    () =>
+      Array.from({ length: frozenRowCount }, (_, i) => i + 1).filter((r) => !sheet.hiddenRows[r - 1]),
+    [frozenRowCount, sheet.hiddenRows],
+  )
+  const scrollableRowNumbers = useMemo(
+    () =>
+      Array.from({ length: sheet.rowCount - frozenRowCount }, (_, i) => i + 1 + frozenRowCount).filter(
+        (r) => !sheet.hiddenRows[r - 1],
+      ),
+    [sheet.rowCount, frozenRowCount, sheet.hiddenRows],
+  )
+
   const rowVirtualizer = useVirtualizer({
-    count: sheet.rowCount,
+    count: scrollableRowNumbers.length,
     getScrollElement: () => scrollRef.current,
     // 모든 행 높이를 파일 읽을 때 미리 다 알고 있어서(런타임 측정이 아님) 이
     // 추정치가 처음부터 정확하다 — 가변 가상화에서 흔한 "늦은 재측정으로 스크롤
     // 위치가 튀는" 문제가 없다.
-    estimateSize: (index) => sheet.rowHeights[index] ?? ROW_HEIGHT_FALLBACK,
+    estimateSize: (index) => sheet.rowHeights[scrollableRowNumbers[index] - 1] ?? ROW_HEIGHT_FALLBACK,
     overscan: 12,
   })
 
-  const gridTemplateColumns = `${ROW_NUM_WIDTH}px ${sheet.colWidths.map((w) => `${w}px`).join(' ')}`
+  // 방향키 이동 시 그 행이 스크롤 가상화 쪽 몇 번째 항목인지 바로 찾기 위한
+  // 역방향 조회 — 매 키 입력마다 scrollableRowNumbers를 선형 탐색하지 않기 위해서다.
+  const rowVirtualIndexByNumber = useMemo(() => {
+    const map = new Map<number, number>()
+    scrollableRowNumbers.forEach((r, i) => map.set(r, i))
+    return map
+  }, [scrollableRowNumbers])
+
+  const gridTemplateColumns = `${ROW_NUM_WIDTH}px ${visibleColNumbers.map((c) => `${sheet.colWidths[c - 1]}px`).join(' ')}`
   const selection = useMemo(() => (anchor && focus ? normalizeRange(anchor, focus) : null), [anchor, focus])
 
   useEffect(() => {
@@ -116,25 +149,164 @@ export function Grid({ sheet, diff, onSelectionChange }: GridProps) {
   /**
    * focus(없으면 anchor, 둘 다 없으면 A1)에서 (dr, dc)만큼 이동한 칸으로 선택을
    * 옮긴다 — 시트 범위로 clamp하고, shift가 눌려있으면 focus만 넓혀 범위를
-   * 늘리고 아니면 anchor/focus를 함께 옮긴다(새로 한 칸만 선택). 가상 스크롤이라
-   * 화면 밖 행으로 이동하면 실제로 안 보이므로 대상 행이 보이게 스크롤한다(열은
-   * 가상화 안 해서 다 DOM에 있으므로 안 건드림).
+   * 늘리고 아니면 anchor/focus를 함께 옮긴다(새로 한 칸만 선택). 숨긴 행/열은
+   * 화면에 없어 거기로 이동해도 아무것도 안 보이므로, Excel처럼 그 방향으로
+   * 계속 건너뛰어 보이는 칸에 멈춘다. 가상 스크롤이라 화면 밖 행으로 이동하면
+   * 실제로 안 보이므로 대상 행이 보이게 스크롤한다(틀고정 행은 항상 보이므로
+   * 스크롤 대상이 아니다, 열은 가상화 안 해서 다 DOM에 있으므로 안 건드림).
    */
   const moveFocus = (dr: number, dc: number, shiftKey: boolean) => {
     const base = focusRef.current ?? anchorRef.current ?? { row: 1, col: 1 }
-    const nextRow = Math.min(Math.max(base.row + dr, 1), Math.max(sheet.rowCount, 1))
-    const nextCol = Math.min(Math.max(base.col + dc, 1), Math.max(sheet.colCount, 1))
+    let nextRow = Math.min(Math.max(base.row + dr, 1), Math.max(sheet.rowCount, 1))
+    if (dr !== 0) {
+      while (nextRow >= 1 && nextRow <= sheet.rowCount && sheet.hiddenRows[nextRow - 1]) {
+        const stepped = nextRow + dr
+        if (stepped < 1 || stepped > sheet.rowCount) break
+        nextRow = stepped
+      }
+    }
+    let nextCol = Math.min(Math.max(base.col + dc, 1), Math.max(sheet.colCount, 1))
+    if (dc !== 0) {
+      while (nextCol >= 1 && nextCol <= sheet.colCount && sheet.hiddenCols[nextCol - 1]) {
+        const stepped = nextCol + dc
+        if (stepped < 1 || stepped > sheet.colCount) break
+        nextCol = stepped
+      }
+    }
     if (shiftKey && anchorRef.current) {
       setFocusBoth({ row: nextRow, col: nextCol })
     } else {
       setAnchorBoth({ row: nextRow, col: nextCol })
       setFocusBoth({ row: nextRow, col: nextCol })
     }
-    rowVirtualizer.scrollToIndex(nextRow - 1, { align: 'auto' })
+    const virtualIndex = rowVirtualIndexByNumber.get(nextRow)
+    if (virtualIndex !== undefined) {
+      rowVirtualizer.scrollToIndex(virtualIndex, { align: 'auto' })
+    }
   }
 
   const handleCopy = () => {
     if (selection) void copyRange(sheet, selection)
+  }
+
+  /**
+   * 한 행(row-number 칸 + 데이터 칸들)을 그린다 — 틀고정 블록과 가상 스크롤 블록이
+   * 똑같은 셀/병합/선택 로직을 공유하도록 모아뒀다(두 블록이 각자 이 로직을 복제해
+   * 들고 있으면 한쪽만 고치고 다른 쪽을 놓치기 쉽다). wrapperStyle만 호출부마다
+   * 다르다(고정 블록은 평범한 블록 흐름, 스크롤 블록은 절대위치+translateY).
+   */
+  const renderRow = (rowNum: number, rowHeight: number, wrapperStyle: CSSProperties) => {
+    const row = sheet.rows[rowNum - 1]
+    return (
+      <div
+        key={rowNum}
+        style={{
+          display: 'grid',
+          gridTemplateColumns,
+          height: rowHeight,
+          ...wrapperStyle,
+        }}
+      >
+        <div
+          className="grid-cell grid-cell--rownum"
+          title={`${rowNum}행 전체 선택`}
+          onClick={() => selectWhole({ row: rowNum, col: 1 }, { row: rowNum, col: sheet.colCount })}
+        >
+          {rowNum}
+        </div>
+        {(() => {
+          const cells: ReactNode[] = []
+          let vi = 0
+          while (vi < visibleColNumbers.length) {
+            const col = visibleColNumbers[vi]
+            const merge = mergeLookup.get(`${rowNum},${col}`)
+
+            // 병합 범위에 덮여있지만 이 칸이 마스터(왼쪽 위)가 아니면: 값을
+            // 중복으로 찍지 않고 빈 칸으로만 렌더링한다. 각 행이 독립된 그리드로
+            // 가상화되는 구조라 CSS의 grid-row: span으로 실제 행을 이어붙일 수는
+            // 없지만(별개 그리드 컨테이너라 span이 작동 안 함), 마스터 셀의 실제
+            // 서식은 가상화 여부와 무관하게 sheet.rows에 항상 남아있으므로 그대로
+            // 가져와 배경/글자색을 이어붙이고, 마지막 행 전까지는 칸 사이 구분선
+            // (border-bottom)을 지워 하나로 이어진 모양처럼 보이게 한다.
+            if (merge && !isMergeMaster(merge, rowNum, col)) {
+              const masterCell = sheet.rows[merge.r0 - 1]?.[merge.c0 - 1]
+              const isLastMergedRow = rowNum === merge.r1
+              cells.push(
+                <div
+                  key={col}
+                  className="grid-cell"
+                  data-merged="true"
+                  data-selected={inRange(selection, rowNum, col)}
+                  title="병합된 셀 — 값은 왼쪽 위 셀에 있어요"
+                  style={{
+                    ...cellStyleProps(masterCell?.style ?? null, inRange(selection, rowNum, col)),
+                    ...(isLastMergedRow ? {} : { borderBottom: 'none' }),
+                  }}
+                  onMouseDown={(e) => beginSelect(rowNum, col, e.shiftKey)}
+                  onMouseEnter={() => extendSelect(rowNum, col)}
+                />,
+              )
+              vi++
+              continue
+            }
+
+            // colSpan은 "보이는 열" 기준으로 센다 — 병합 범위 안에 숨긴 열이 섞여
+            // 있으면 그만큼 적게 스팬해야 실제로 그려지는 그리드 트랙 수와 맞는다.
+            let colSpan = 1
+            if (merge) {
+              colSpan = 0
+              for (let k = vi; k < visibleColNumbers.length && visibleColNumbers[k] <= merge.c1; k++) colSpan++
+            }
+
+            const colIndex = col - 1
+            const cell = row?.[colIndex]
+            const isNumeric = typeof cell?.value === 'number'
+            const cellDiff = diff?.cells[rowNum - 1]?.[colIndex]
+            const diffTitle =
+              cellDiff?.status === 'changed'
+                ? `비교 파일 값: ${cellDiff.oldValue ?? '(없음)'}`
+                : cellDiff?.status === 'removed'
+                  ? `비교 파일에만 있던 값: ${cellDiff.oldValue}`
+                  : undefined
+
+            cells.push(
+              <div
+                key={col}
+                className="grid-cell"
+                data-selected={inRange(selection, rowNum, col)}
+                data-diff={cellDiff && cellDiff.status !== 'unchanged' ? cellDiff.status : undefined}
+                title={diffTitle}
+                style={{
+                  justifyContent: isNumeric ? 'flex-end' : 'flex-start',
+                  gridColumn: colSpan > 1 ? `span ${colSpan}` : undefined,
+                  ...cellStyleProps(
+                    cell?.style ?? null,
+                    inRange(selection, rowNum, col) || Boolean(cellDiff && cellDiff.status !== 'unchanged'),
+                  ),
+                  // 세로로 병합된 마스터 행이면(아래로 더 이어짐) 다음 칸과의 구분선을
+                  // 지워 전체가 하나로 이어진 모양이 되게 한다(위 continuation 칸 처리와
+                  // 짝을 이루는 로직).
+                  ...(merge && merge.r1 > rowNum ? { borderBottom: 'none' } : {}),
+                }}
+                onMouseDown={(e) => beginSelect(rowNum, col, e.shiftKey)}
+                onMouseEnter={() => extendSelect(rowNum, col)}
+              >
+                {cell?.hyperlink ? (
+                  <a href={cell.hyperlink} target="_blank" rel="noopener noreferrer" className="grid-cell-link">
+                    {formatCellValue(cell)}
+                  </a>
+                ) : (
+                  formatCellValue(cell)
+                )}
+              </div>,
+            )
+
+            vi += colSpan
+          }
+          return cells
+        })()}
+      </div>
+    )
   }
 
   return (
@@ -185,116 +357,36 @@ export function Grid({ sheet, diff, onSelectionChange }: GridProps) {
             title="전체 선택"
             onClick={() => selectWhole({ row: 1, col: 1 }, { row: sheet.rowCount, col: sheet.colCount })}
           />
-          {Array.from({ length: sheet.colCount }, (_, i) => (
+          {visibleColNumbers.map((col) => (
             <div
-              key={i}
+              key={col}
               className="grid-cell grid-cell--colhead"
               style={{ height: HEADER_HEIGHT }}
-              title={`${columnLetter(i + 1)}열 전체 선택`}
-              onClick={() => selectWhole({ row: 1, col: i + 1 }, { row: sheet.rowCount, col: i + 1 })}
+              title={`${columnLetter(col)}열 전체 선택`}
+              onClick={() => selectWhole({ row: 1, col }, { row: sheet.rowCount, col })}
             >
-              {columnLetter(i + 1)}
+              {columnLetter(col)}
             </div>
           ))}
         </div>
 
+        {frozenRowNumbers.length > 0 && (
+          <div style={{ position: 'sticky', top: HEADER_HEIGHT, zIndex: 1 }}>
+            {frozenRowNumbers.map((rowNum) => renderRow(rowNum, sheet.rowHeights[rowNum - 1] ?? ROW_HEIGHT_FALLBACK, {}))}
+          </div>
+        )}
+
         <div style={{ height: rowVirtualizer.getTotalSize(), position: 'relative' }}>
           {rowVirtualizer.getVirtualItems().map((virtualRow) => {
-            const row = sheet.rows[virtualRow.index]
-            const rowNum = virtualRow.index + 1
-            const rowHeight = sheet.rowHeights[virtualRow.index] ?? ROW_HEIGHT_FALLBACK
-            return (
-              <div
-                key={virtualRow.key}
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns,
-                  position: 'absolute',
-                  top: 0,
-                  left: 0,
-                  width: '100%',
-                  height: rowHeight,
-                  transform: `translateY(${virtualRow.start}px)`,
-                }}
-              >
-                <div
-                  className="grid-cell grid-cell--rownum"
-                  title={`${rowNum}행 전체 선택`}
-                  onClick={() => selectWhole({ row: rowNum, col: 1 }, { row: rowNum, col: sheet.colCount })}
-                >
-                  {rowNum}
-                </div>
-                {(() => {
-                  const cells: ReactNode[] = []
-                  let colIndex = 0
-                  while (colIndex < sheet.colCount) {
-                    const col = colIndex + 1
-                    const merge = mergeLookup.get(`${rowNum},${col}`)
-
-                    // 병합 범위에 덮여있지만 이 칸이 마스터(왼쪽 위)가 아니면: 값을
-                    // 중복으로 찍지 않고 빈 칸으로만 렌더링한다(세로 병합은 열
-                    // 스팬만으로는 시각적으로 못 이어붙이므로 v1은 이 정도로 절충).
-                    if (merge && !isMergeMaster(merge, rowNum, col)) {
-                      cells.push(
-                        <div
-                          key={colIndex}
-                          className="grid-cell"
-                          data-merged="true"
-                          data-selected={inRange(selection, rowNum, col)}
-                          title="병합된 셀 — 값은 왼쪽 위 셀에 있어요"
-                          onMouseDown={(e) => beginSelect(rowNum, col, e.shiftKey)}
-                          onMouseEnter={() => extendSelect(rowNum, col)}
-                        />,
-                      )
-                      colIndex++
-                      continue
-                    }
-
-                    const colSpan = merge ? merge.c1 - merge.c0 + 1 : 1
-                    const cell = row?.[colIndex]
-                    const isNumeric = typeof cell?.value === 'number'
-                    const cellDiff = diff?.cells[rowNum - 1]?.[colIndex]
-                    const diffTitle =
-                      cellDiff?.status === 'changed'
-                        ? `비교 파일 값: ${cellDiff.oldValue ?? '(없음)'}`
-                        : cellDiff?.status === 'removed'
-                          ? `비교 파일에만 있던 값: ${cellDiff.oldValue}`
-                          : undefined
-
-                    cells.push(
-                      <div
-                        key={colIndex}
-                        className="grid-cell"
-                        data-selected={inRange(selection, rowNum, col)}
-                        data-diff={cellDiff && cellDiff.status !== 'unchanged' ? cellDiff.status : undefined}
-                        title={diffTitle}
-                        style={{
-                          justifyContent: isNumeric ? 'flex-end' : 'flex-start',
-                          gridColumn: colSpan > 1 ? `span ${colSpan}` : undefined,
-                          ...cellStyleProps(
-                            cell?.style ?? null,
-                            inRange(selection, rowNum, col) || Boolean(cellDiff && cellDiff.status !== 'unchanged'),
-                          ),
-                        }}
-                        onMouseDown={(e) => beginSelect(rowNum, col, e.shiftKey)}
-                        onMouseEnter={() => extendSelect(rowNum, col)}
-                      >
-                        {cell?.hyperlink ? (
-                          <a href={cell.hyperlink} target="_blank" rel="noopener noreferrer" className="grid-cell-link">
-                            {formatCellValue(cell)}
-                          </a>
-                        ) : (
-                          formatCellValue(cell)
-                        )}
-                      </div>,
-                    )
-
-                    colIndex += colSpan
-                  }
-                  return cells
-                })()}
-              </div>
-            )
+            const rowNum = scrollableRowNumbers[virtualRow.index]
+            const rowHeight = sheet.rowHeights[rowNum - 1] ?? ROW_HEIGHT_FALLBACK
+            return renderRow(rowNum, rowHeight, {
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              width: '100%',
+              transform: `translateY(${virtualRow.start}px)`,
+            })
           })}
         </div>
       </div>
