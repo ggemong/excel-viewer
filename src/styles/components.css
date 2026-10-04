@@ -321,8 +321,13 @@
   display: flex; align-items: center; gap: var(--sp-2);
   background: var(--bg-elev);
   border-top: 1px solid var(--line);
+  /* 시트가 많은 파일(수십 개)에서 탭이 찌그러지거나 페이지 전체가 옆으로 밀리지 않고 이 줄 안에서만 스크롤된다. */
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
 }
 .sheet-tab {
+  flex: none; white-space: nowrap;
   font-size: var(--fs-xs); font-weight: 700; color: var(--text-2);
   padding: 5px 14px; border-radius: 8px 8px 0 0;
   border-bottom: 2px solid transparent;
@@ -510,4 +515,228 @@
   max-height: 70vh;
   border-radius: var(--r-md) var(--r-md) 0 0;
   padding-bottom: calc(var(--sp-3) + env(safe-area-inset-bottom));
+}
+
+/* ---------- 검색 (src/search) ---------- */
+/* 데이터 위에 얹는 기능적 강조색(브라우저 찾기와 같은 노랑/주황) — 선택(accent)·비교(diff)와 겹치지 않게 별도 색을 쓴다. */
+:root {
+  --search-match: light-dark(rgb(255 214 0 / 0.38), rgb(255 214 0 / 0.30));
+  --search-current: light-dark(rgb(255 140 0 / 0.55), rgb(255 150 0 / 0.55));
+  --search-current-ring: light-dark(#d97000, #ffb347);
+}
+.grid-cell[data-search]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--search-match);
+  pointer-events: none;
+}
+.grid-cell[data-search="current"]::after {
+  background: var(--search-current);
+  box-shadow: inset 0 0 0 2px var(--search-current-ring);
+}
+.drawing-item[data-search="match"] {
+  outline: 2px solid var(--search-current-ring);
+  outline-offset: 2px;
+  background: var(--search-match);
+}
+.drawing-item[data-search="current"] {
+  outline: 3px solid var(--search-current-ring);
+  outline-offset: 3px;
+  background: var(--search-current);
+}
+
+.search-bar {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  padding: var(--sp-2) var(--sp-5);
+  background: var(--bg-elev);
+  border-bottom: 1px solid var(--line);
+}
+.search-bar__row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+.search-bar__input {
+  flex: 1 1 200px;
+  min-width: 0;
+  padding: 7px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  color: var(--text);
+  font-size: var(--fs-sm);
+}
+.search-bar__input:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+.search-bar__scope {
+  display: inline-flex;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-pill);
+  overflow: hidden;
+}
+.search-bar__scope button {
+  padding: 5px 12px;
+  border: 0;
+  background: transparent;
+  color: var(--text-2);
+  font-size: var(--fs-xs);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.search-bar__scope button[aria-pressed="true"] {
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 700;
+}
+.search-bar__count {
+  min-width: 56px;
+  text-align: center;
+  font-size: var(--fs-xs);
+  color: var(--text-2);
+  white-space: nowrap;
+}
+.search-bar__nav:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.search-bar__toggle {
+  padding: 4px 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text-2);
+  font-size: var(--fs-xs);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.search-bar__toggle[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 700;
+}
+.search-bar__note {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-3);
+  font-size: var(--fs-xs);
+  color: var(--text-3);
+}
+.search-bar__link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font-size: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.search-results {
+  flex: none;
+  max-height: 38vh;
+  overflow-y: auto;
+  background: var(--bg);
+  border-bottom: 1px solid var(--line);
+}
+.search-results__sheet {
+  position: sticky;
+  top: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 4px var(--sp-5);
+  background: var(--bg-sunk);
+  border-bottom: 1px solid var(--line);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  color: var(--text-2);
+}
+.search-results__sheet-count {
+  font-weight: 600;
+  color: var(--text-3);
+}
+.search-results__item {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-3);
+  width: 100%;
+  padding: 6px var(--sp-5);
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: transparent;
+  color: var(--text);
+  font-size: var(--fs-sm);
+  text-align: left;
+  cursor: pointer;
+}
+.search-results__item:hover {
+  background: var(--accent-soft);
+}
+.search-results__item[aria-current="true"] {
+  background: var(--accent-soft);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.search-results__loc {
+  flex: none;
+  min-width: 64px;
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+}
+.search-results__text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.search-results__text mark {
+  background: var(--search-current);
+  color: inherit;
+  border-radius: 2px;
+}
+.search-results__more {
+  padding: var(--sp-3) var(--sp-5);
+  font-size: var(--fs-xs);
+  color: var(--text-3);
+}
+
+.sheet-tab-badge {
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: var(--r-pill);
+  background: var(--search-current);
+  color: inherit;
+  font-size: var(--fs-xs);
+  font-weight: 700;
+}
+
+.toolbar-search {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.toolbar-search[aria-pressed="true"] {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+/* 좁은 화면에서는 아이콘만 — 한 줄을 유지한다. */
+@media (max-width: 768px) {
+  .toolbar-search__label {
+    display: none;
+  }
+}
+
+/* 좁은 화면: 결과 목록이 그리드를 다 가리지 않게 높이를 줄인다. */
+@media (max-width: 768px) {
+  .search-results {
+    max-height: 28vh;
+  }
 }

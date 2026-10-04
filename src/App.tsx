@@ -1,9 +1,9 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CellRange } from './clipboard/buildClipboardPayload'
 import { DropZone } from './grid/DropZone'
 import { FilterMenu } from './grid/FilterMenu'
 import { FilterStatusBar } from './grid/FilterStatusBar'
-import { Grid } from './grid/Grid'
+import { Grid, type GridFocusRequest } from './grid/Grid'
 import { skippedDrawingNotice } from './grid/skippedDrawingNotice'
 import { SummaryBar } from './grid/SummaryBar'
 import { Toolbar } from './grid/Toolbar'
@@ -11,6 +11,10 @@ import { useViewFilters } from './grid/useViewFilters'
 import { formatCellValue } from './xlsx/formatValue'
 import { columnLetter } from './xlsx/cellRef'
 import type { SheetModel } from './xlsx/types'
+import { highlightsFor } from './search/searchEngine'
+import { SearchBar } from './search/SearchBar'
+import { SearchResults } from './search/SearchResults'
+import { useSearch } from './search/useSearch'
 import { useWorkbookController } from './state/useWorkbookController'
 
 function App() {
@@ -52,6 +56,67 @@ function App() {
   )
   const menuData = filterMenu && filterMenu.sheet === activeSheet ? filters.entriesFor(filterMenu.col) : null
 
+  // 시트 전환은 탭 클릭과 검색 결과 이동이 같은 경로를 쓴다(선택·열린 메뉴 초기화 포함).
+  const activateSheet = useCallback(
+    (index: number) => {
+      setActiveSheetIndex(index)
+      setSelection(null)
+      setFilterMenu(null)
+    },
+    [setActiveSheetIndex],
+  )
+
+  const search = useSearch({ workbook, activeSheetIndex, viewSheetFor: filters.viewSheetFor, onActivateSheet: activateSheet })
+  const searchInputRef = useRef<HTMLInputElement>(null)
+  // 시트가 많을 때 검색 결과 이동 등으로 활성 탭이 바뀌면 탭 줄 안에서 그 탭이 보이게 스크롤한다.
+  const tabsRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    tabsRef.current?.querySelector('[aria-current="true"]')?.scrollIntoView?.({ inline: 'nearest', block: 'nearest' })
+  }, [activeSheetIndex])
+  const { open: searchOpen, setOpen: setSearchOpen, go: searchGo } = search
+
+  const openSearch = useCallback(() => {
+    setSearchOpen(true)
+    // 이미 열려 있으면 입력으로 포커스만 옮긴다. 새로 열릴 때는 아래 effect가 포커스한다.
+    searchInputRef.current?.focus()
+    searchInputRef.current?.select()
+  }, [setSearchOpen])
+  useEffect(() => {
+    if (searchOpen) {
+      searchInputRef.current?.focus()
+      searchInputRef.current?.select()
+    }
+  }, [searchOpen])
+
+  // Ctrl+F는 파일이 열려 있을 때만 가로챈다 — 브라우저 기본 찾기는 가상 스크롤이라 화면 밖 행을 못 찾는다.
+  const filterMenuOpen = filterMenu !== null
+  useEffect(() => {
+    if (!workbook) return
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === 'f') {
+        e.preventDefault()
+        openSearch()
+      } else if (searchOpen && e.key === 'F3') {
+        e.preventDefault()
+        searchGo(e.shiftKey ? -1 : 1)
+      } else if (searchOpen && e.key === 'Escape' && !filterMenuOpen) {
+        setSearchOpen(false)
+      }
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [workbook, searchOpen, searchGo, setSearchOpen, openSearch, filterMenuOpen])
+
+  const searchHighlights = useMemo(() => (searchOpen ? highlightsFor(search.hits, activeSheetIndex) : null), [searchOpen, search.hits, activeSheetIndex])
+  const currentHit = searchOpen ? search.currentHit : null
+  const onActiveSheet = currentHit !== null && currentHit.sheetIndex === activeSheetIndex
+  const focusRequest = useMemo<GridFocusRequest | null>(() => {
+    if (!currentHit || currentHit.sheetIndex !== activeSheetIndex) return null
+    return currentHit.kind === 'cell'
+      ? { nonce: search.navNonce, kind: 'cell', row: currentHit.row, col: currentHit.col }
+      : { nonce: search.navNonce, kind: 'shape', drawingIndex: currentHit.drawingIndex }
+  }, [currentHit, activeSheetIndex, search.navNonce])
+
   return (
     <div className="app-shell">
       <Toolbar
@@ -61,12 +126,22 @@ function App() {
         compareLoading={compareLoading}
         onPickCompareFile={loadCompareFile}
         onClearCompare={clearCompare}
+        onOpenSearch={openSearch}
+        searchOpen={searchOpen}
       />
 
       {!workbook || !activeSheet ? (
         <DropZone onFile={openFile} error={error} loading={loading} />
       ) : (
         <>
+          {searchOpen && (
+            <>
+              <SearchBar search={search} inputRef={searchInputRef} onClose={() => setSearchOpen(false)} />
+              {search.scope === 'all' && (
+                <SearchResults hits={search.hits} sheetNames={workbook.sheets.map((s) => s.name)} currentIndex={search.currentIndex} onSelect={search.selectHit} />
+              )}
+            </>
+          )}
           <SummaryBar sheet={activeSheet} selection={selection} filteredOut={filters.filteredOut} />
           {compareError && (
             <div className="summary-bar" style={{ background: 'var(--accent-soft)', color: 'var(--accent)' }}>
@@ -88,12 +163,18 @@ function App() {
             />
           )}
           <Grid
+            key={activeSheet.name}
             sheet={filters.viewSheet ?? activeSheet}
             diff={activeSheetDiff}
             onSelectionChange={setSelection}
             activeFilterCols={filters.activeCols}
             onFilterButtonClick={toggleFilterMenu}
             filteredOut={filters.filteredOut}
+            searchCells={searchHighlights?.cells}
+            searchCurrentCell={onActiveSheet && currentHit.kind === 'cell' ? { row: currentHit.row, col: currentHit.col } : null}
+            searchShapes={searchHighlights?.shapes}
+            searchCurrentShape={onActiveSheet && currentHit.kind === 'shape' ? currentHit.drawingIndex : null}
+            focusRequest={focusRequest}
           />
           {filterMenu && menuData && (
             <FilterMenu
@@ -110,20 +191,19 @@ function App() {
             />
           )}
           {workbook.sheets.length > 1 && (
-            <div className="sheet-tabs">
+            <div className="sheet-tabs" ref={tabsRef}>
               {workbook.sheets.map((sheet, i) => (
                 <button
                   key={sheet.name}
                   type="button"
                   className="sheet-tab"
                   aria-current={i === activeSheetIndex}
-                  onClick={() => {
-                    setActiveSheetIndex(i)
-                    setSelection(null)
-                    setFilterMenu(null)
-                  }}
+                  onClick={() => activateSheet(i)}
                 >
                   {sheet.name}
+                  {searchOpen && search.scope === 'all' && search.countsBySheet.has(i) && (
+                    <span className="sheet-tab-badge">{search.countsBySheet.get(i)}</span>
+                  )}
                 </button>
               ))}
             </div>

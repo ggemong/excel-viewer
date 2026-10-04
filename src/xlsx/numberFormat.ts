@@ -494,3 +494,12 @@ export function formatText(text: string, code: string | null): string {
     .tokens.map((tk) => (tk.t === 'text' ? text : tk.t === 'lit' ? tk.s : ''))
     .join('')
 }
+
+/**
+ * 이 표시 형식 코드가 날짜/시간 형식인가 — 날짜 셀의 원래 값은 직렬번호(46299 같은 숫자)라
+ * 사용자에게는 의미가 없어서, 검색 등에서 "원래 값"으로 취급하지 않기 위해 구분한다.
+ */
+export function isDateTimeFormat(code: string | null): boolean {
+  if (!code || /^general$/i.test(code.trim())) return false
+  return isDateSection(tokenize(splitSections(normalizeCode(code))[0]).tokens)
+}

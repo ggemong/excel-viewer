@@ -32,6 +32,11 @@ export interface ViewFilters {
   /** 사용자가 이 시트의 필터를 건드린 상태인가(파일 상태로 되돌리기 가능 여부). */
   touched: boolean
   stats: { total: number; shown: number } | null
+  /**
+   * 임의의 시트에 지금의 보기 필터를 적용한 시트. 전체 시트 검색이 "가려진 행 제외"를 시트마다
+   * 화면과 똑같이 판단하는 데 쓴다. 필터 상태가 바뀌면 함수 자체가 바뀌어 검색이 다시 돈다.
+   */
+  viewSheetFor: (target: SheetModel) => SheetModel
   entriesFor: (col: number) => { entries: ValueEntry[]; filter: SheetFilter } | null
   toggle: (col: number, value: string) => void
   setListed: (col: number, values: string[], include: boolean) => void
@@ -91,6 +96,16 @@ export function useViewFilters(workbook: WorkbookModel | null, sheet: SheetModel
     [sheet, selections],
   )
 
+  const viewSheetFor = useCallback(
+    (target: SheetModel): SheetModel => {
+      const targetFilter = target.filters[0]
+      const targetSelections = state.owner === workbook ? state.bySheet.get(target.name) : undefined
+      if (!targetFilter || !targetSelections) return target
+      return { ...target, hiddenRows: applySelections(target, targetFilter, targetSelections).hiddenRows }
+    },
+    [state, workbook],
+  )
+
   const update = useCallback(
     (col: number, compute: (universe: Set<string>, current: Set<string> | undefined) => Set<string> | null) => {
       if (!sheet || !filter) return
@@ -109,6 +124,7 @@ export function useViewFilters(workbook: WorkbookModel | null, sheet: SheetModel
     activeCols,
     touched: Boolean(selections),
     stats,
+    viewSheetFor,
     entriesFor,
     toggle: (col, value) => update(col, (universe, current) => toggleValue(universe, current, value)),
     setListed: (col, values, include) => update(col, (universe, current) => setValues(universe, current, values, include)),

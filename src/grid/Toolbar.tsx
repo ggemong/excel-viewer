@@ -9,6 +9,9 @@ interface ToolbarProps {
   compareLoading: boolean
   onPickCompareFile: (file: File) => void
   onClearCompare: () => void
+  /** 검색 줄 열기(Ctrl+F와 같은 동작). */
+  onOpenSearch: () => void
+  searchOpen: boolean
 }
 
 export function Toolbar({
@@ -18,6 +21,8 @@ export function Toolbar({
   compareLoading,
   onPickCompareFile,
   onClearCompare,
+  onOpenSearch,
+  searchOpen,
 }: ToolbarProps) {
   const compareInputRef = useRef<HTMLInputElement>(null)
   const [menuOpen, setMenuOpen] = useState(false)
@@ -83,6 +88,22 @@ export function Toolbar({
                 </button>
               </span>
             )}
+
+            {/* 검색은 자주 쓰는 기능이라 좁은 화면에서도 접지 않고 아이콘으로 항상 보여준다. */}
+            <button
+              type="button"
+              className="btn btn--ghost toolbar-search"
+              onClick={onOpenSearch}
+              aria-label="검색"
+              aria-pressed={searchOpen}
+              title="검색 (Ctrl+F)"
+            >
+              <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true">
+                <circle cx="8.5" cy="8.5" r="5.5" fill="none" stroke="currentColor" strokeWidth="2" />
+                <path d="M13 13l5 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+              </svg>
+              <span className="toolbar-search__label">검색</span>
+            </button>
 
             {/* 데스크톱 전용 — 넓은 화면에서는 접을 필요 없이 그냥 나열한다. */}
             <span className="toolbar-desktop-actions">

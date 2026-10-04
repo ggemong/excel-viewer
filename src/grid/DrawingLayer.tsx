@@ -14,6 +14,8 @@ import { presetPath, rectPath } from './shapeGeometry'
 
 export interface PlacedDrawing {
   item: DrawingItem
+  /** sheet.drawings 안의 순서 — 검색 결과가 도형을 가리키는 키. */
+  index: number
   box: PlacedBox
 }
 
@@ -23,6 +25,8 @@ interface DrawingLayerProps {
   offsetX: number
   offsetY: number
   urlFor: (blob: Blob) => string | undefined
+  /** 검색 결과로 강조할 도형(drawings 인덱스 -> 상태). 안 주면 강조 없음. */
+  searchState?: (index: number) => 'match' | 'current' | undefined
 }
 
 const JUSTIFY_BY_VALIGN: Record<'top' | 'middle' | 'bottom', CSSProperties['justifyContent']> = {
@@ -138,13 +142,14 @@ function NodeView({ node, width, height, urlFor }: { node: DrawingNode; width: n
   }
 }
 
-export function DrawingLayer({ placed, offsetX, offsetY, urlFor }: DrawingLayerProps) {
+export function DrawingLayer({ placed, offsetX, offsetY, urlFor, searchState }: DrawingLayerProps) {
   return (
     <>
-      {placed.map(({ item, box }, i) => (
+      {placed.map(({ item, box, index }) => (
         <div
-          key={i}
+          key={index}
           className="drawing-item"
+          data-search={searchState?.(index)}
           style={{ left: offsetX + box.left, top: box.top - offsetY, width: box.width, height: box.height, ...transformCss(item.node) }}
         >
           <NodeView node={item.node} width={box.width} height={box.height} urlFor={urlFor} />

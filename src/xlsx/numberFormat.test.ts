@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatNumber, formatText, generalNumber } from './numberFormat'
+import { formatNumber, formatText, generalNumber, isDateTimeFormat } from './numberFormat'
 
 /** 시간대와 무관하게 Excel 직렬번호를 만든다(기준일 1899-12-30, cellValue.ts의 dateToSerial과 동일 기준). */
 function serial(y: number, mo: number, d: number, h = 0, mi = 0, s = 0): number {
@@ -154,5 +154,18 @@ describe('텍스트 구간', () => {
   it('@가 없는 서식이면 원문 그대로', () => {
     expect(formatText('abc', '#,##0')).toBe('abc')
     expect(formatText('abc', null)).toBe('abc')
+  })
+})
+
+describe('isDateTimeFormat', () => {
+  it('날짜/시간 서식만 true', () => {
+    expect(isDateTimeFormat('yyyy-mm-dd')).toBe(true)
+    expect(isDateTimeFormat('h:mm AM/PM')).toBe(true)
+    expect(isDateTimeFormat('[h]:mm')).toBe(true)
+    expect(isDateTimeFormat('mm-dd-yy')).toBe(true)
+    expect(isDateTimeFormat('#,##0"원"')).toBe(false)
+    expect(isDateTimeFormat('0.0%')).toBe(false)
+    expect(isDateTimeFormat('General')).toBe(false)
+    expect(isDateTimeFormat(null)).toBe(false)
   })
 })

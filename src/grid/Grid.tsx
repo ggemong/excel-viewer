@@ -36,7 +36,21 @@ interface GridProps {
   onFilterButtonClick?: (col: number, anchor: DOMRect) => void
   /** 필터로 걸러진 행 — 복사에서 제외한다. */
   filteredOut?: boolean[]
+  /** 검색 결과로 강조할 셀("행,열" 키)과 현재 위치. */
+  searchCells?: Set<string>
+  searchCurrentCell?: { row: number; col: number } | null
+  /** 검색 결과로 강조할 도형(drawings 인덱스)과 현재 위치. */
+  searchShapes?: Set<number>
+  searchCurrentShape?: number | null
+  /** 이 요청이 새로 오면(nonce가 바뀌면) 그 위치로 스크롤하고 선택한다. */
+  focusRequest?: GridFocusRequest | null
 }
+
+/** 외부(검색)가 그리드에 "여기로 가 줘"라고 요청하는 모양. nonce가 바뀔 때마다 새 요청으로 본다. */
+export type GridFocusRequest = { nonce: number } & ({ kind: 'cell'; row: number; col: number } | { kind: 'shape'; drawingIndex: number })
+
+/** 검색 결과로 이동할 때 목표가 화면 가장자리에 붙지 않도록 남기는 여백(px). */
+const SEARCH_SCROLL_MARGIN = 48
 
 function inRange(range: CellRange | null, row: number, col: number): boolean {
   return !!range && row >= range.r0 && row <= range.r1 && col >= range.c0 && col <= range.c1
@@ -49,7 +63,7 @@ function inRange(range: CellRange | null, row: number, col: number): boolean {
  * 실사용 파일에서 병목은 열 수가 아니라 행 수라서, 행 가상화만으로 대용량 파일의
  * 스크롤 성능 문제를 해결한다. 열이 극단적으로 많은 시트는 이후 확장 대상.
  */
-export function Grid({ sheet, diff, onSelectionChange, activeFilterCols, onFilterButtonClick, filteredOut }: GridProps) {
+export function Grid({ sheet, diff, onSelectionChange, activeFilterCols, onFilterButtonClick, filteredOut, searchCells, searchCurrentCell, searchShapes, searchCurrentShape, focusRequest }: GridProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const [anchor, setAnchor] = useState<{ row: number; col: number } | null>(null)
   const [focus, setFocus] = useState<{ row: number; col: number } | null>(null)
@@ -124,7 +138,7 @@ export function Grid({ sheet, diff, onSelectionChange, activeFilterCols, onFilte
   const rowAxis = useMemo(() => buildAxis(sheet.rowHeights, sheet.hiddenRows, OUT_OF_RANGE_CELL_SIZE), [sheet.rowHeights, sheet.hiddenRows])
   const frozenHeight = axisOffset(rowAxis, frozenRowCount)
   const { frozenPlaced, scrollPlaced } = useMemo(() => {
-    const placed: PlacedDrawing[] = sheet.drawings.map((item) => ({ item, box: placeItem(item, colAxis, rowAxis) }))
+    const placed: PlacedDrawing[] = sheet.drawings.map((item, index) => ({ item, index, box: placeItem(item, colAxis, rowAxis) }))
     const inFrozen = (p: PlacedDrawing) => frozenHeight > 0 && p.box.top + p.box.height <= frozenHeight + 1
     return { frozenPlaced: placed.filter(inFrozen), scrollPlaced: placed.filter((p) => !inFrozen(p)) }
   }, [sheet.drawings, colAxis, rowAxis, frozenHeight])
@@ -225,6 +239,48 @@ export function Grid({ sheet, diff, onSelectionChange, activeFilterCols, onFilte
     }
   }
 
+  // 검색 결과로 이동: 셀이면 선택하고 가운데로 스크롤, 도형이면 그 위치로 스크롤. 키보드 포커스는
+  // 검색 입력에 남겨 둔다(Enter로 계속 다음 결과로 넘어갈 수 있게).
+  const focusNonce = focusRequest?.nonce
+  useEffect(() => {
+    if (!focusRequest) return
+    const scroller = scrollRef.current
+    if (!scroller) return
+
+    if (focusRequest.kind === 'cell') {
+      const { row, col } = focusRequest
+      setAnchorBoth({ row, col })
+      setFocusBoth({ row, col })
+      const virtualIndex = rowVirtualIndexByNumber.get(row)
+      if (virtualIndex !== undefined) rowVirtualizer.scrollToIndex(virtualIndex, { align: 'center' })
+      // 열은 가상화하지 않으므로 가로 스크롤은 직접 계산한다(화면 밖일 때만 움직인다).
+      const left = ROW_NUM_WIDTH + axisOffset(colAxis, col - 1)
+      const right = ROW_NUM_WIDTH + axisOffset(colAxis, col)
+      if (left < scroller.scrollLeft || right > scroller.scrollLeft + scroller.clientWidth) {
+        scroller.scrollTo({ left: Math.max(0, left - SEARCH_SCROLL_MARGIN) })
+      }
+      return
+    }
+
+    const item = sheet.drawings[focusRequest.drawingIndex]
+    if (!item) return
+    const box = placeItem(item, colAxis, rowAxis)
+    // 틀고정 영역 안의 도형은 항상 보이므로 세로로 움직이지 않는다.
+    if (box.top + box.height > frozenHeight + 1) {
+      scroller.scrollTo({ top: Math.max(0, box.top - frozenHeight - SEARCH_SCROLL_MARGIN) })
+    }
+    const left = ROW_NUM_WIDTH + box.left
+    if (left < scroller.scrollLeft || left + box.width > scroller.scrollLeft + scroller.clientWidth) {
+      scroller.scrollTo({ left: Math.max(0, left - SEARCH_SCROLL_MARGIN) })
+    }
+    // 의존성을 nonce 하나로 둔 이유: 같은 위치로 다시 이동(Enter 반복)하는 것도 새 요청이어야 하고,
+    // 시트/축이 바뀐 것만으로는 이동하면 안 된다.
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusNonce])
+
+  const searchShapeState = (index: number): 'match' | 'current' | undefined =>
+    searchCurrentShape === index ? 'current' : searchShapes?.has(index) ? 'match' : undefined
+
   const handleCopy = () => {
     if (selection) void copyRange(sheet, selection, filteredOut)
   }
@@ -300,6 +356,12 @@ export function Grid({ sheet, diff, onSelectionChange, activeFilterCols, onFilte
 
             const colIndex = col - 1
             const filterState = filterButtons.get(`${rowNum},${col}`)
+            const searchState =
+              searchCurrentCell && searchCurrentCell.row === rowNum && searchCurrentCell.col === col
+                ? 'current'
+                : searchCells?.has(`${rowNum},${col}`)
+                  ? 'match'
+                  : undefined
             const cell = row?.[colIndex]
             const isNumeric = typeof cell?.value === 'number'
             const cellDiff = diff?.cells[rowNum - 1]?.[colIndex]
@@ -315,6 +377,7 @@ export function Grid({ sheet, diff, onSelectionChange, activeFilterCols, onFilte
                 key={col}
                 className={filterState ? 'grid-cell grid-cell--filter' : 'grid-cell'}
                 data-selected={inRange(selection, rowNum, col)}
+                data-search={searchState}
                 data-diff={cellDiff && cellDiff.status !== 'unchanged' ? cellDiff.status : undefined}
                 title={diffTitle ?? (filterState === 'active' ? '이 열에 필터 조건이 걸려 있어요' : undefined)}
                 style={{
@@ -429,7 +492,7 @@ export function Grid({ sheet, diff, onSelectionChange, activeFilterCols, onFilte
         {frozenRowNumbers.length > 0 && (
           <div style={{ position: 'sticky', top: HEADER_HEIGHT, zIndex: 1 }}>
             {frozenRowNumbers.map((rowNum) => renderRow(rowNum, sheet.rowHeights[rowNum - 1] ?? ROW_HEIGHT_FALLBACK, {}))}
-            <DrawingLayer placed={frozenPlaced} offsetX={ROW_NUM_WIDTH} offsetY={0} urlFor={urlFor} />
+            <DrawingLayer placed={frozenPlaced} offsetX={ROW_NUM_WIDTH} offsetY={0} urlFor={urlFor} searchState={searchShapeState} />
           </div>
         )}
 
@@ -446,7 +509,7 @@ export function Grid({ sheet, diff, onSelectionChange, activeFilterCols, onFilte
               transform: `translateY(${virtualRow.start}px)`,
             })
           })}
-          <DrawingLayer placed={scrollPlaced} offsetX={ROW_NUM_WIDTH} offsetY={frozenHeight} urlFor={urlFor} />
+          <DrawingLayer placed={scrollPlaced} offsetX={ROW_NUM_WIDTH} offsetY={frozenHeight} urlFor={urlFor} searchState={searchShapeState} />
         </div>
       </div>
     </div>
