@@ -67,7 +67,7 @@ export function createSpillResolver(input: SpillInput): (row: number, col: numbe
     const cell = rows[row - 1]?.[col - 1]
     const index = visibleIndex.get(col)
     if (!cell || index === undefined || typeof cell.value !== 'string' || cell.value === '') return null
-    if (cell.style?.align?.wrap || cell.hyperlink || merged.has(`${row},${col}`) || isBlocked(row, col)) return null
+    if (cell.style?.align?.wrap || cell.hyperlink || cell.internalLink || cell.computedLink || merged.has(`${row},${col}`) || isBlocked(row, col)) return null
 
     const width = measure(cell.value, cell.style)
     if (width === null) return null

@@ -164,3 +164,55 @@ describe('이 파일의 실제 조건부서식 수식', () => {
     expect(at5('$L1="O"', { L5: 'o' })).toBe(true) // 대소문자 무시
   })
 })
+
+describe('링크 계산용 함수', () => {
+  it('SUBSTITUTE: 모두 바꾸기, n번째만 바꾸기, 찾는 글이 없으면 그대로', () => {
+    expect(run('SUBSTITUTE("a-b-c","-","+")')).toBe('a+b+c')
+    expect(run('SUBSTITUTE("a-b-c","-","+",2)')).toBe('a-b+c')
+    expect(run('SUBSTITUTE("abc","x","y")')).toBe('abc')
+    expect(run(`SUBSTITUTE("Bob's","'","''")`)).toBe("Bob''s")
+  })
+
+  it('MATCH: 정확히 일치(대소문자 무시)의 위치, 없으면 #N/A, 근사 일치는 지원하지 않는다', () => {
+    const cells = { A1: '가', A2: '나', A3: '다' }
+    expect(run('MATCH("나",A1:A3,0)', cells)).toBe(2)
+    expect(run('MATCH("NA",A1:A3,0)', { A1: 'na' })).toBe(1)
+    expect(run('MATCH("라",A1:A3,0)', cells)).toEqual({ error: '#N/A' })
+    expect(run('MATCH("나",A1:A3)', cells)).toEqual({ error: '#N/A' })
+    expect(run('MATCH(2,A1:A3,0)', { A1: '2', A2: 2 })).toBe(2) // 숫자 2와 글자 "2"는 다르다
+  })
+
+  it('CELL("filename"): [파일]시트 — 문맥이 없으면 오류', () => {
+    expect(run('CELL("filename")', {}, { fileName: 'a.xlsx', sheetName: '시트1' })).toBe('[a.xlsx]시트1')
+    expect(run('MID(CELL("filename"),FIND("]",CELL("filename"))+1,255)', {}, { fileName: 'a.xlsx', sheetName: '시트1' })).toBe('시트1')
+    expect(run('CELL("filename")')).toEqual({ error: '#VALUE!' })
+    expect(run('CELL("address")', {}, { fileName: 'a.xlsx', sheetName: 's' })).toEqual({ error: '#VALUE!' })
+  })
+
+  it('INDIRECT: 다른 시트의 열 전체는 시트의 실제 사용 범위까지, 없는 시트는 #REF!', () => {
+    const other = { 가: ['x', 'y', 'z'] }
+    const over = {
+      sheetName: '현재',
+      sheetValue: (sheet: string, row: number, col: number): Scalar => (sheet === '가' && col === 6 ? (other.가[row - 1] ?? null) : null),
+      sheetExtent: (sheet: string) => (sheet in other ? { rows: 3, cols: 6 } : null),
+    }
+    expect(run(`MATCH("y",INDIRECT("'가'!f:f"),0)`, {}, over)).toBe(2)
+    expect(run(`INDIRECT("'없음'!f:f")`, {}, over)).toEqual({ error: '#REF!' })
+    expect(run(`MATCH("y",INDIRECT("'없음'!f:f"),0)`, {}, over)).toEqual({ error: '#REF!' })
+    expect(run(`MATCH("y",INDIRECT("&&"),0)`, {}, over)).toEqual({ error: '#REF!' })
+  })
+
+  it('INDIRECT: 지금 시트의 칸 주소', () => {
+    expect(run(`INDIRECT("B1")`, { B1: 7 }, { sheetName: '현재' })).toBe(7)
+  })
+
+  it('HYPERLINK는 칸에 보이는 글자(두 번째 인자, 없으면 대상)를 돌려준다', () => {
+    expect(run('HYPERLINK("#A1","이름")')).toBe('이름')
+    expect(run('HYPERLINK("#A1")')).toBe('#A1')
+  })
+
+  it('워크북 문맥이 필요한 함수는 조건부서식 지원 목록에 없다(그쪽은 문맥을 주지 않으므로 "표시 못 하는 서식"으로 알려야 한다)', () => {
+    for (const name of ['INDIRECT', 'CELL', 'HYPERLINK']) expect(SUPPORTED_FUNCTIONS.has(name)).toBe(false)
+    for (const name of ['MATCH', 'SUBSTITUTE']) expect(SUPPORTED_FUNCTIONS.has(name)).toBe(true)
+  })
+})

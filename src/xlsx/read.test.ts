@@ -327,3 +327,55 @@ describe('차트 읽기(드로잉 → 차트 부품)', () => {
     expect(model.sheets[0].colCount).toBeGreaterThanOrEqual(6)
   })
 })
+
+describe('수식으로 만든 링크(HYPERLINK)', () => {
+  async function linkCells() {
+    const wb = new ExcelJS.Workbook()
+    const ws = wb.addWorksheet('목록')
+    wb.addWorksheet('참조 1')
+    ws.getCell('A1').value = { formula: `HYPERLINK("#'참조 1'!B3","참조 1")`, result: '참조 1' }
+    ws.getCell('A2').value = { formula: `HYPERLINK("https://a.example/x","열기")`, result: '열기' }
+    ws.getCell('A3').value = { formula: `HYPERLINK("javascript:alert(1)","나쁨")`, result: '나쁨' }
+    ws.getCell('A4').value = { formula: `HYPERLINK("#'"&A1&"'!A1","계산된 대상")`, result: '계산된 대상' }
+    ws.getCell('A5').value = { text: '직접 링크', hyperlink: 'https://direct.example' }
+    return (await readWorkbook(await toFile(wb))).sheets[0].rows
+  }
+
+  it('시트 이동 링크 수식은 대상 시트와 칸을 갖고, 보이는 글자는 수식 결과다', async () => {
+    const cell = (await linkCells())[0][0]!
+    expect(cell.value).toBe('참조 1')
+    expect(cell.internalLink).toEqual({ sheet: '참조 1', row: 3, col: 2 })
+    expect(cell.hyperlink).toBeNull()
+  })
+
+  it('외부 주소 수식은 허용된 스킴만 링크가 된다', async () => {
+    const rows = await linkCells()
+    expect(rows[1][0]!.hyperlink).toBe('https://a.example/x')
+    expect(rows[2][0]!.hyperlink).toBeNull()
+    expect(rows[2][0]!.internalLink).toBeUndefined()
+  })
+
+  it('대상이 계산으로 만들어지는 수식은 지금 가리킬 곳을 모르므로 "눌렀을 때 계산"으로만 표시한다', async () => {
+    const cell = (await linkCells())[3][0]!
+    expect(cell.internalLink).toBeUndefined()
+    expect(cell.hyperlink).toBeNull()
+    expect(cell.computedLink).toBe(true)
+  })
+
+  it('허용되지 않은 주소의 리터럴 수식은 계산 링크도 아니다(링크가 아예 아니다)', async () => {
+    const cell = (await linkCells())[2][0]!
+    expect(cell.computedLink).toBeUndefined()
+  })
+
+  it('계산 결과가 비어 보이는 링크 수식 칸(IFERROR가 빈 글자를 낸 경우)은 링크로 만들지 않는다', async () => {
+    const wb = new ExcelJS.Workbook()
+    const ws = wb.addWorksheet('S')
+    ws.getCell('A1').value = { formula: `IFERROR(HYPERLINK("#"&B1&"!A1","이동"),"")`, result: '' }
+    const cell = (await readWorkbook(await toFile(wb))).sheets[0].rows[0][0]
+    expect(cell?.computedLink).toBeUndefined()
+  })
+
+  it('칸에 직접 건 외부 링크는 그대로 읽힌다', async () => {
+    expect((await linkCells())[4][0]!.hyperlink).toBe('https://direct.example')
+  })
+})

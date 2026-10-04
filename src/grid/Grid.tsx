@@ -13,6 +13,7 @@ import { isMergeMaster, useMergeLookup, type MergeRange } from './useMergeLookup
 import { useBlobUrls } from './useBlobUrls'
 import { cellHorizontalChrome } from './wrapMeasure'
 import { cellAddress, columnLetter } from '../xlsx/cellRef'
+import type { InternalLink } from '../xlsx/hyperlink'
 import { applyConditionalStyle, cellStyleProps, type CellStyle } from '../xlsx/cellStyle'
 import { axisOffset, buildAxis, collectPictureBlobs, placeItem } from '../xlsx/drawingLayout'
 import { formatCellValue } from '../xlsx/formatValue'
@@ -53,13 +54,23 @@ interface GridProps {
   searchCurrentShape?: number | null
   /** 이 요청이 새로 오면(nonce가 바뀌면) 그 위치로 스크롤하고 선택한다. */
   focusRequest?: GridFocusRequest | null
+  /** 같은 통합문서 안으로 가는 링크 칸을 눌렀을 때. 시트를 바꾸는 일은 앱이 한다. */
+  onNavigateLink?: (click: LinkClick) => void
 }
+
+/** 링크 칸을 눌렀을 때 앱에 알리는 내용: 이미 아는 이동 대상, 또는 눌렀을 때 계산해야 하는 칸 위치. */
+export type LinkClick = { kind: 'internal'; link: InternalLink } | { kind: 'computed'; row: number; col: number }
 
 /** 외부(검색)가 그리드에 "여기로 가 줘"라고 요청하는 모양. nonce가 바뀔 때마다 새 요청으로 본다. */
 export type GridFocusRequest = { nonce: number } & ({ kind: 'cell'; row: number; col: number } | { kind: 'shape'; drawingIndex: number })
 
 /** 검색 결과로 이동할 때 목표가 화면 가장자리에 붙지 않도록 남기는 여백(px). */
 const SEARCH_SCROLL_MARGIN = 48
+
+/** 링크 칸에 마우스를 올렸을 때 보이는 안내: 어디로 가는지. */
+function internalLinkTitle(link: InternalLink): string {
+  return `${link.sheet ? `'${link.sheet}' 시트의 ` : ''}${cellAddress(link.row, link.col)}(으)로 이동`
+}
 
 function inRange(range: CellRange | null, row: number, col: number): boolean {
   return !!range && row >= range.r0 && row <= range.r1 && col >= range.c0 && col <= range.c1
@@ -72,7 +83,7 @@ function inRange(range: CellRange | null, row: number, col: number): boolean {
  * 실사용 파일에서 병목은 열 수가 아니라 행 수라서, 행 가상화만으로 대용량 파일의
  * 스크롤 성능 문제를 해결한다. 열이 극단적으로 많은 시트는 이후 확장 대상.
  */
-export function Grid({ sheet, diff, onSelectionChange, activeFilterCols, onFilterButtonClick, filteredOut, searchCells, searchCurrentCell, searchShapes, searchCurrentShape, focusRequest }: GridProps) {
+export function Grid({ sheet, diff, onSelectionChange, activeFilterCols, onFilterButtonClick, filteredOut, searchCells, searchCurrentCell, searchShapes, searchCurrentShape, focusRequest, onNavigateLink }: GridProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const [anchor, setAnchor] = useState<{ row: number; col: number } | null>(null)
   const [focus, setFocus] = useState<{ row: number; col: number } | null>(null)
@@ -468,7 +479,32 @@ export function Grid({ sheet, diff, onSelectionChange, activeFilterCols, onFilte
                 onMouseDown={(e) => beginSelect(rowNum, col, e.shiftKey)}
                 onMouseEnter={() => extendSelect(rowNum, col)}
               >
-                {cell?.hyperlink ? (
+                {cell?.internalLink ? (
+                  <a
+                    href="#"
+                    className="grid-cell-link grid-cell-link--internal"
+                    title={internalLinkTitle(cell.internalLink)}
+                    // 주소창이 #으로 바뀌지 않게 막고, 시트 이동은 앱에 맡긴다.
+                    onClick={(e) => {
+                      e.preventDefault()
+                      onNavigateLink?.({ kind: 'internal', link: cell.internalLink! })
+                    }}
+                  >
+                    {formatCellValue(cell)}
+                  </a>
+                ) : cell?.computedLink ? (
+                  <a
+                    href="#"
+                    className="grid-cell-link grid-cell-link--internal"
+                    title="클릭하면 이동할 곳을 계산해서 이동해요"
+                    onClick={(e) => {
+                      e.preventDefault()
+                      onNavigateLink?.({ kind: 'computed', row: rowNum, col })
+                    }}
+                  >
+                    {formatCellValue(cell)}
+                  </a>
+                ) : cell?.hyperlink ? (
                   <a href={cell.hyperlink} target="_blank" rel="noopener noreferrer" className="grid-cell-link">
                     {formatCellValue(cell)}
                   </a>

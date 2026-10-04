@@ -6,6 +6,7 @@ import type { CellStyle } from './cellStyle'
 import type { ConditionalFormat } from './conditionalFormat'
 import type { DrawingItem } from './drawingTypes'
 import type { SheetFilter } from './filter'
+import type { InternalLink } from './hyperlink'
 
 export type { CellStyle } from './cellStyle'
 
@@ -21,6 +22,16 @@ export interface CellModel {
    * null — src/xlsx/read.ts의 cellToModel 참고). CSV는 항상 null.
    */
   hyperlink: string | null
+  /**
+   * 같은 통합문서의 다른 칸으로 가는 링크(`=HYPERLINK("#시트!A1", ...)` 수식에서 읽는다 — src/xlsx/hyperlink.ts).
+   * 외부 링크(hyperlink)와 동시에 있지 않다. 없으면 undefined.
+   */
+  internalLink?: InternalLink
+  /**
+   * `=HYPERLINK(계산식, ...)`처럼 이동할 곳이 계산으로 정해지는 링크 칸. 열 때는 계산하지 않고, 칸을 눌렀을 때 그 수식을
+   * 계산해서 이동한다(src/formula/linkTarget.ts). 링크를 읽을 수 있는 칸(hyperlink/internalLink)과 동시에 있지 않다.
+   */
+  computedLink?: true
   /** 셀 메모(주석) 글자. 메모가 없으면 undefined. 서식은 버리고 글자만 이어 붙인다. */
   note?: string
 }

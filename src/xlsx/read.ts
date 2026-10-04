@@ -3,6 +3,8 @@ import { extractCellStyle } from './cellStyle'
 import { interpretCellValue, interpretNote } from './cellValue'
 import { excelColumnWidthToPx, excelPointsToPx, measureDefaultFontWidth } from './columnWidth'
 import { readDefaultFontPt } from './defaultFont'
+import { isLiteralHyperlinkFormula, linkFromFormula, sanitizeHyperlink } from './hyperlink'
+import { isLinkFormula } from '../formula/linkTarget'
 import { readWorkbookDrawings, type SheetDrawings } from './drawing'
 import { extractConditionalFormats, type RawConditionalFormatting } from './conditionalFormat'
 import { buildAxis, requiredExtent } from './drawingLayout'
@@ -26,19 +28,6 @@ const DEFAULT_ROW_HEIGHT_PT = 15
  * 됐다(운영 빌드에서 실측). 이 값을 늘릴 때는 "우리가 쓰지 않는 노드인가"를 먼저 확인한다.
  */
 export const EXCELJS_IGNORED_NODES = ['dataValidations']
-
-/** 사용자가 올린 임의 파일을 그대로 열어주는 뷰어라, 하이퍼링크는 이 스킴만 신뢰한다 —
- * javascript:/file: 같은 스킴으로 된 악성 링크가 그대로 클릭 가능한 <a>가 되는 걸 막는다. */
-const ALLOWED_HYPERLINK_SCHEMES = ['http:', 'https:', 'mailto:']
-
-function sanitizeHyperlink(url: string): string | null {
-  try {
-    const scheme = new URL(url).protocol
-    return ALLOWED_HYPERLINK_SCHEMES.includes(scheme) ? url : null
-  } catch {
-    return null
-  }
-}
 
 /**
  * 파일을 읽어서 화면 표시용 모델을 만든다. ExcelJS는 파일을 열 때만 동적으로
@@ -246,6 +235,23 @@ export function mergeRangesOf(worksheet: import('exceljs').Worksheet): string[] 
   return worksheet.model.merges ?? []
 }
 
+/**
+ * 칸의 링크. 파일이 칸에 직접 건 외부 링크가 우선이고, 없으면 `=HYPERLINK(...)` 수식에서 읽는다(외부 주소 또는 같은 통합문서 안 이동).
+ * 외부 주소는 허용된 스킴만 남긴다.
+ */
+function linkOf(hyperlink: string | null, formula: string | null, value: CellModel['value']): Pick<CellModel, 'hyperlink' | 'internalLink' | 'computedLink'> {
+  const direct = hyperlink ? sanitizeHyperlink(hyperlink) : null
+  if (direct) return { hyperlink: direct }
+  const fromFormula = formula ? linkFromFormula(formula) : null
+  if (fromFormula?.kind === 'internal') return { hyperlink: null, internalLink: fromFormula.link }
+  if (fromFormula?.kind === 'external') return { hyperlink: fromFormula.url }
+  // 대상이 글자 그대로가 아니라 계산식인 HYPERLINK: 링크로 보이고, 눌렀을 때 계산한다. 리터럴인데 안전하지 않은 주소면 링크로 만들지 않는다.
+  // 저장된 결과가 비어 있으면 눌러도 보이는 것이 없다 — 대상 계산이 오류라서 IFERROR가 빈 글자를 낸 칸이므로 링크로 만들지 않는다.
+  const shown = value !== null && value !== ''
+  if (formula && shown && isLinkFormula(formula) && !isLiteralHyperlinkFormula(formula)) return { hyperlink: null, computedLink: true }
+  return { hyperlink: null }
+}
+
 function cellToModel(cell: import('exceljs').Cell, theme: ThemeColors | null, note: string | undefined, defaultFontPt: number | null): CellModel {
   const { value, formula, hyperlink } = interpretCellValue(cell.value)
 
@@ -255,7 +261,7 @@ function cellToModel(cell: import('exceljs').Cell, theme: ThemeColors | null, no
     formula,
     numFmt: cell.numFmt ?? null,
     style: extractCellStyle(cell, theme, defaultFontPt),
-    hyperlink: hyperlink ? sanitizeHyperlink(hyperlink) : null,
+    ...linkOf(hyperlink, formula, value),
     ...(note ? { note } : {}),
   }
 }

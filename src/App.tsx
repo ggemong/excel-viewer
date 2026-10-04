@@ -5,7 +5,7 @@ import { CellDetailBar } from './grid/CellDetailBar'
 import { describeCell } from './grid/cellDetail'
 import { FilterMenu } from './grid/FilterMenu'
 import { FilterStatusBar } from './grid/FilterStatusBar'
-import { Grid, type GridFocusRequest } from './grid/Grid'
+import { Grid, type GridFocusRequest, type LinkClick } from './grid/Grid'
 import { skippedConditionalNotice } from './grid/skippedConditionalNotice'
 import { skippedDrawingNotice } from './grid/skippedDrawingNotice'
 import { SummaryBar } from './grid/SummaryBar'
@@ -18,6 +18,8 @@ import { highlightsFor } from './search/searchEngine'
 import { SearchBar } from './search/SearchBar'
 import { SearchResults } from './search/SearchResults'
 import { useSearch } from './search/useSearch'
+import { resolveLinkFormula, workbookEvalContext } from './formula/linkTarget'
+import type { InternalLink } from './xlsx/hyperlink'
 import { useWorkbookController } from './state/useWorkbookController'
 
 function App() {
@@ -61,17 +63,60 @@ function App() {
   )
   const menuData = filterMenu && filterMenu.sheet === activeSheet ? filters.entriesFor(filterMenu.col) : null
 
-  // 시트 전환은 탭 클릭과 검색 결과 이동이 같은 경로를 쓴다(선택·열린 메뉴 초기화 포함).
+  // 링크 칸을 눌러 다른 칸으로 이동하라는 요청. 검색 결과 이동과 같은 focusRequest 경로로 그리드에 전달한다.
+  // searchNonce: 이 이동 뒤에 검색이 다시 움직였으면(번호가 바뀌었으면) 검색 쪽이 최신이므로 이 요청은 더 쓰지 않는다.
+  const [jump, setJump] = useState<{ id: number; sheetIndex: number; row: number; col: number; searchNonce: number } | null>(null)
+  const [linkMessage, setLinkMessage] = useState<string | null>(null)
+  const jumpIdRef = useRef(0)
+
+  // 시트 전환은 탭 클릭, 검색 결과 이동, 링크 이동이 같은 경로를 쓴다(선택·열린 메뉴 초기화 포함).
+  // 탭으로 시트를 옮기면 이전 링크 이동 요청은 지워서, 나중에 그 시트로 돌아왔을 때 옛 목적지로 다시 튀지 않게 한다.
   const activateSheet = useCallback(
     (index: number) => {
       setActiveSheetIndex(index)
       setSelection(null)
       setFilterMenu(null)
+      setJump(null)
+      setLinkMessage(null)
     },
     [setActiveSheetIndex],
   )
 
   const search = useSearch({ workbook, activeSheetIndex, viewSheetFor: filters.viewSheetFor, onActivateSheet: activateSheet })
+  const searchNavNonce = search.navNonce
+  const navigateLink = useCallback(
+    (click: LinkClick) => {
+      if (!workbook || !activeSheet) return
+      let link: InternalLink
+      if (click.kind === 'computed') {
+        // 이동할 곳이 계산식인 링크: 누른 순간 그 칸의 수식을 계산한다. 못 하면 틀린 곳으로 보내지 않고 이유를 알린다.
+        const formula = activeSheet.rows[click.row - 1]?.[click.col - 1]?.formula
+        const result = formula ? resolveLinkFormula(formula, workbookEvalContext(workbook, activeSheet, click.row, click.col)) : null
+        if (!result?.ok) {
+          setLinkMessage(result ? result.reason : '이 링크의 수식을 읽지 못했어요')
+          return
+        }
+        if (result.target.kind === 'external') {
+          window.open(result.target.url, '_blank', 'noopener,noreferrer')
+          return
+        }
+        link = result.target.link
+      } else {
+        link = click.link
+      }
+      const target = link.sheet
+      const index = target === null ? activeSheetIndex : workbook.sheets.findIndex((s) => s.name.toLowerCase() === target.toLowerCase())
+      if (index < 0) {
+        // 숨겨진 시트는 읽지 않으므로 링크 대상이 없을 수 있다 — 조용히 아무 일도 안 하지 않고 이유를 알린다.
+        setLinkMessage(`'${target}' 시트를 찾을 수 없어요. 숨겨진 시트이거나 이름이 바뀌었을 수 있어요.`)
+        return
+      }
+      if (index !== activeSheetIndex) activateSheet(index)
+      else setLinkMessage(null)
+      setJump({ id: ++jumpIdRef.current, sheetIndex: index, row: link.row, col: link.col, searchNonce: searchNavNonce })
+    },
+    [workbook, activeSheet, activeSheetIndex, activateSheet, searchNavNonce],
+  )
   const searchInputRef = useRef<HTMLInputElement>(null)
   // 시트가 많을 때 검색 결과 이동 등으로 활성 탭이 바뀌면 탭 줄 안에서 그 탭이 보이게 스크롤한다.
   const tabsRef = useRef<HTMLDivElement>(null)
@@ -121,11 +166,15 @@ function App() {
   const currentHit = searchOpen ? search.currentHit : null
   const onActiveSheet = currentHit !== null && currentHit.sheetIndex === activeSheetIndex
   const focusRequest = useMemo<GridFocusRequest | null>(() => {
+    // 링크 이동의 번호는 음수로 둔다 — 검색 이동 번호(0 이상)와 같은 숫자가 되어 "새 요청"으로 안 보이는 일이 없게.
+    if (jump && jump.sheetIndex === activeSheetIndex && jump.searchNonce === search.navNonce) {
+      return { nonce: -jump.id, kind: 'cell', row: jump.row, col: jump.col }
+    }
     if (!currentHit || currentHit.sheetIndex !== activeSheetIndex) return null
     return currentHit.kind === 'cell'
       ? { nonce: search.navNonce, kind: 'cell', row: currentHit.row, col: currentHit.col }
       : { nonce: search.navNonce, kind: 'shape', drawingIndex: currentHit.drawingIndex }
-  }, [currentHit, activeSheetIndex, search.navNonce])
+  }, [jump, currentHit, activeSheetIndex, search.navNonce])
 
   return (
     <div className="app-shell">
@@ -158,7 +207,7 @@ function App() {
               {compareError}
             </div>
           )}
-          {[...workbook.warnings, skippedDrawingNotice(activeSheet.skippedDrawings), skippedConditionalNotice(activeSheet.skippedConditionalFormats)].filter(Boolean).map((notice) => (
+          {[...workbook.warnings, skippedDrawingNotice(activeSheet.skippedDrawings), skippedConditionalNotice(activeSheet.skippedConditionalFormats), linkMessage].filter(Boolean).map((notice) => (
             <div key={notice} className="notice-bar" role="status">
               {notice}
             </div>
@@ -186,6 +235,7 @@ function App() {
             searchShapes={searchHighlights?.shapes}
             searchCurrentShape={onActiveSheet && currentHit.kind === 'shape' ? currentHit.drawingIndex : null}
             focusRequest={focusRequest}
+            onNavigateLink={navigateLink}
           />
           {filterMenu && menuData && (
             <FilterMenu

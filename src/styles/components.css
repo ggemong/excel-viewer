@@ -299,6 +299,9 @@
   white-space: nowrap;
   pointer-events: none;
 }
+.grid-cell-link--internal {
+  cursor: pointer;
+}
 .grid-cell-link {
   color: inherit;
   text-decoration: underline;

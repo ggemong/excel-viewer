@@ -9,6 +9,10 @@
  *
  * 지원 함수는 SUPPORTED_FUNCTIONS 한 곳에서 정한다 — 읽는 쪽(conditionalFormat.ts)이 이 목록으로
  * "표시 못 하는 규칙"을 미리 걸러내므로, 함수를 추가하려면 여기에 구현과 이름을 같이 넣으면 된다.
+ *
+ * 워크북 문맥(다른 시트, 파일 이름)이 있어야 의미가 있는 함수(INDIRECT, CELL, HYPERLINK)는 CONTEXT_FUNCTIONS로 따로 둔다.
+ * 링크 이동 대상 계산(linkTarget.ts)은 쓰지만 조건부서식은 그 문맥을 주지 않으므로 SUPPORTED_FUNCTIONS에서는 빠진다 — 안 그러면
+ * 조건부서식 규칙이 조용히 오류가 되어 "표시 못 하는 서식" 안내가 사라진다.
  */
 import { nowSerial, serialToUtcDate, todaySerial } from '../xlsx/excelDate'
 import { generalNumber } from '../xlsx/numberFormat'
@@ -26,6 +30,8 @@ interface RangeValue {
   c0: number
   r1: number
   c1: number
+  /** 다른 시트의 범위일 때 그 시트 이름(INDIRECT). 없으면 지금 시트. */
+  sheet?: string
 }
 type Result = Value | RangeValue
 
@@ -39,6 +45,13 @@ export interface EvalContext {
   getValue: (row: number, col: number) => Scalar
   /** 테스트에서 시간을 고정할 수 있게 주입한다. 없으면 실제 시계. */
   clock?: { today: number; now: number }
+  /** 지금 시트 이름과 파일 이름 — CELL("filename")이 쓴다. */
+  sheetName?: string
+  fileName?: string
+  /** 다른 시트의 칸 값(INDIRECT). 시트가 없으면 undefined. */
+  sheetValue?: (sheet: string, row: number, col: number) => Scalar
+  /** 시트의 사용된 행/열 수 — 열 전체 참조(`F:F`)를 실제 데이터 범위로 줄이는 데 쓴다. 시트가 없으면 null. */
+  sheetExtent?: (sheet: string) => { rows: number; cols: number } | null
 }
 
 const ERR = {
@@ -112,8 +125,9 @@ function resolveRef(ref: RefNode, ctx: EvalContext): { row: number; col: number 
 /** 범위 인자를 값 목록으로 펼친다(범위가 아니면 값 하나). 같은 범위 인자들은 크기가 작아 그대로 펼친다. */
 function flatten(arg: Result, ctx: EvalContext): Value[] {
   if (!isRange(arg)) return [arg]
+  const read = arg.sheet !== undefined ? (r: number, c: number) => ctx.sheetValue?.(arg.sheet!, r, c) ?? null : ctx.getValue
   const out: Value[] = []
-  for (let r = arg.r0; r <= arg.r1; r++) for (let c = arg.c0; c <= arg.c1; c++) out.push(ctx.getValue(r, c))
+  for (let r = arg.r0; r <= arg.r1; r++) for (let c = arg.c0; c <= arg.c1; c++) out.push(read(r, c))
   return out
 }
 
@@ -140,7 +154,7 @@ function makeCriteria(criteria: Scalar): (v: Scalar) => boolean {
   }
 }
 
-type Fn = (args: Node[], ctx: EvalContext, ev: (n: Node) => Result) => Value
+type Fn = (args: Node[], ctx: EvalContext, ev: (n: Node) => Result) => Result
 
 /** 인자를 값으로 평가(범위는 #VALUE!). */
 const scalarArg = (n: Node, ev: (n: Node) => Result): Value => {
@@ -198,6 +212,25 @@ const FUNCTIONS: Record<string, Fn> = {
   },
   SEARCH: (args, _c, ev) => find(args, ev, false),
   FIND: (args, _c, ev) => find(args, ev, true),
+  SUBSTITUTE: (args, _c, ev) => {
+    const text = toText(scalarArg(args[0], ev))
+    const from = toText(scalarArg(args[1], ev))
+    const to = toText(scalarArg(args[2], ev))
+    const nth = args[3] ? toNumber(scalarArg(args[3], ev)) : 0
+    if (isError(text)) return text
+    if (isError(from)) return from
+    if (isError(to)) return to
+    if (isError(nth)) return nth
+    if (from === '') return text
+    if (nth === 0) return text.split(from).join(to)
+    // n번째 것만 바꾼다
+    let at = -1
+    for (let i = 0; i < nth; i++) {
+      at = text.indexOf(from, at + 1)
+      if (at < 0) return text
+    }
+    return text.slice(0, at) + to + text.slice(at + from.length)
+  },
   EXACT: (args, _c, ev) => {
     const a = toText(scalarArg(args[0], ev))
     const b = toText(scalarArg(args[1], ev))
@@ -237,6 +270,19 @@ const FUNCTIONS: Record<string, Fn> = {
     if (isError(criteria)) return criteria
     const test = makeCriteria(criteria)
     return range.filter((v) => !isError(v) && test(v)).length
+  },
+  // 조회: 정확히 일치(match_type 0)만. 정렬된 목록에서 가까운 값을 찾는 근사 일치는 지원하지 않는다(#N/A).
+  MATCH: (args, ctx, ev) => {
+    const needle = scalarArg(args[0], ev)
+    const haystack = ev(args[1])
+    const type = args[2] ? toNumber(scalarArg(args[2], ev)) : 1
+    if (isError(needle)) return needle
+    if (isError(type)) return type
+    if (type !== 0) return ERR.na
+    // 찾을 범위가 오류면(예: 없는 시트를 가리킨 INDIRECT의 #REF!) 그 오류를 그대로 알린다 — #N/A로 바꾸면 원인이 가려진다.
+    if (isError(haystack)) return haystack
+    const index = flatten(haystack, ctx).findIndex((v) => !isError(v) && v !== null && compare(v, needle) === 0)
+    return index < 0 ? ERR.na : index + 1
   },
   // 행/열
   ROW: (args, ctx) => {
@@ -357,8 +403,68 @@ function aggregate(args: Node[], ctx: EvalContext, ev: (n: Node) => Result, f: (
   return isError(nums) ? nums : f(nums)
 }
 
-/** 구현된 함수 이름(대문자) — 읽는 쪽이 지원 여부를 판단하는 기준. */
+/**
+ * 워크북 문맥이 있어야 의미가 있는 함수. 링크 이동 대상 계산은 문맥(다른 시트, 파일 이름)을 주지만 조건부서식은 주지 않으므로,
+ * 조건부서식에서는 지원하지 않는 함수로 취급한다(SUPPORTED_FUNCTIONS 참고).
+ */
+const CONTEXT_FUNCTIONS: Record<string, Fn> = {
+  /** 글자로 쓴 참조(`'시트'!F:F`, `A1:B5`)를 범위로. 열 전체는 시트의 실제 사용 범위까지로 줄인다. */
+  INDIRECT: (args, ctx, ev) => {
+    const text = toText(scalarArg(args[0], ev))
+    return isError(text) ? text : refFromText(text, ctx)
+  },
+  /** CELL("filename")만: `[파일이름]시트이름`(Excel은 앞에 폴더 경로가 붙는다 — 경로는 모르므로 비운다). */
+  CELL: (args, ctx, ev) => {
+    const kind = toText(scalarArg(args[0], ev))
+    if (isError(kind)) return kind
+    return kind.toLowerCase() === 'filename' && ctx.fileName !== undefined && ctx.sheetName !== undefined ? `[${ctx.fileName}]${ctx.sheetName}` : ERR.value
+  },
+  /** 칸에 보이는 글자는 두 번째 인자(없으면 대상 글자). 이동 대상은 linkTarget.ts가 첫 인자로 따로 계산한다. */
+  HYPERLINK: (args, _c, ev) => (args[1] ? scalarArg(args[1], ev) : scalarArg(args[0], ev)),
+}
+
+const ALL_FUNCTIONS: Record<string, Fn> = { ...FUNCTIONS, ...CONTEXT_FUNCTIONS }
+
+/** 구현된 함수 이름(대문자) 중 조건부서식이 쓸 수 있는 것 — 읽는 쪽(conditionalFormat.ts)이 지원 여부를 판단하는 기준. */
 export const SUPPORTED_FUNCTIONS: ReadonlySet<string> = new Set(Object.keys(FUNCTIONS))
+
+const SHEET_REF_RE = /^(?:('(?:[^']|'')+'|[^'!]+)!)?(.+)$/
+const COLUMN_SPAN_RE = /^\$?([A-Za-z]{1,3}):\$?([A-Za-z]{1,3})$/
+const CELL_SPAN_RE = /^\$?([A-Za-z]{1,3})\$?(\d+)(?::\$?([A-Za-z]{1,3})\$?(\d+))?$/
+
+function columnIndex(letters: string): number {
+  let col = 0
+  for (const ch of letters.toUpperCase()) col = col * 26 + (ch.charCodeAt(0) - 64)
+  return col
+}
+
+/** INDIRECT의 글자 참조를 범위로. 모르는 시트나 이해 못 하는 모양은 #REF!. */
+function refFromText(text: string, ctx: EvalContext): Result {
+  const m = SHEET_REF_RE.exec(text.trim())
+  if (!m) return ERR.ref
+  const sheet = m[1] === undefined ? undefined : m[1].startsWith("'") ? m[1].slice(1, -1).replace(/''/g, "'") : m[1]
+  const target = sheet ?? ctx.sheetName
+  // 다른 시트를 가리키는데 그 시트를 읽을 방법이 없거나 그런 시트가 없으면 틀린 값을 만들지 않고 #REF!.
+  if (sheet !== undefined && (!ctx.sheetValue || (ctx.sheetExtent && !ctx.sheetExtent(sheet)))) return ERR.ref
+  const ref = m[2]
+
+  const columns = COLUMN_SPAN_RE.exec(ref)
+  if (columns) {
+    const extent = target !== undefined ? ctx.sheetExtent?.(target) : null
+    if (!extent) return ERR.ref
+    const [a, b] = [columnIndex(columns[1]), columnIndex(columns[2])]
+    return { range: true, r0: 1, c0: Math.min(a, b), r1: Math.max(1, extent.rows), c1: Math.max(a, b), sheet }
+  }
+  const cells = CELL_SPAN_RE.exec(ref)
+  if (!cells) return ERR.ref
+  const c0 = columnIndex(cells[1])
+  const r0 = Number(cells[2])
+  const c1 = cells[3] ? columnIndex(cells[3]) : c0
+  const r1 = cells[4] ? Number(cells[4]) : r0
+  // 칸 하나를 가리키면 범위가 아니라 그 칸의 값이다(Excel도 한 칸 참조는 값처럼 쓰인다).
+  if (r0 === r1 && c0 === c1) return sheet !== undefined ? (ctx.sheetValue?.(sheet, r0, c0) ?? null) : ctx.getValue(r0, c0)
+  return { range: true, r0: Math.min(r0, r1), c0: Math.min(c0, c1), r1: Math.max(r0, r1), c1: Math.max(c0, c1), sheet }
+}
 
 export function evaluateFormula(ast: Node, ctx: EvalContext): Value {
   const ev = (n: Node): Result => {
@@ -386,7 +492,7 @@ export function evaluateFormula(ast: Node, ctx: EvalContext): Value {
         return isError(x) ? x : x / 100
       }
       case 'call': {
-        const fn = FUNCTIONS[n.name]
+        const fn = ALL_FUNCTIONS[n.name]
         return fn ? fn(n.args, ctx, ev) : { error: '#NAME?' }
       }
       case 'bin':
