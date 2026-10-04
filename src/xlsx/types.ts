@@ -3,6 +3,7 @@
  * 이 프로젝트는 읽기 전용 뷰어라(D-006) 이 모델을 다시 파일로 쓰는 경로는 없다.
  */
 import type { CellStyle } from './cellStyle'
+import type { ConditionalFormat } from './conditionalFormat'
 import type { DrawingItem } from './drawingTypes'
 import type { SheetFilter } from './filter'
 
@@ -48,6 +49,10 @@ export interface SheetModel {
    * 들어 있고, 여기에는 "어디에 버튼이 있고 어느 열에 조건이 걸렸는가"라는 표시 정보만 둔다.
    */
   filters: SheetFilter[]
+  /** 조건부서식(src/xlsx/conditionalFormat.ts). 상태에 따라 칸/행을 칠하는 규칙들 — 없으면 빈 배열. */
+  conditionalFormats: ConditionalFormat[]
+  /** 표시하지 못해 건너뛴 조건부서식 규칙의 종류별 개수(UI가 안내 문구로 알린다). */
+  skippedConditionalFormats: Record<string, number>
   /** 시트 위에 떠 있는 그림·도형(src/xlsx/drawing.ts). 없으면 빈 배열. */
   drawings: DrawingItem[]
   /**

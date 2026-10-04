@@ -14,6 +14,8 @@
  * 지원한다.
  */
 
+import { EXCEL_EPOCH_UTC_MS, MS_PER_DAY } from './excelDate'
+
 type Lang = 'ko' | 'en'
 
 type Token =
@@ -44,9 +46,6 @@ const PRIMARY_LANG_MASK = 0x3ff
 const LANG_EN = 0x09
 const LANG_KO = 0x12
 
-/** Excel 날짜 직렬번호 기준일(1899-12-30). cellValue.ts의 dateToSerial과 같은 기준이어야 한다. */
-const EXCEL_EPOCH_UTC_MS = Date.UTC(1899, 11, 30)
-const MS_PER_DAY = 86_400_000
 const SECONDS_PER_DAY = 86_400
 
 /** General 표시에서 숫자를 지수 표기로 바꾸는 경계(Excel 기본 열폭에서 11자리가 한계). */

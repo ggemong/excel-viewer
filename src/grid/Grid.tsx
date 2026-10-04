@@ -3,11 +3,12 @@ import { useVirtualizer } from '@tanstack/react-virtual'
 import { normalizeRange, type CellRange } from '../clipboard/buildClipboardPayload'
 import { useClipboardCopy } from '../clipboard/useClipboardCopy'
 import type { SheetDiff } from '../diff/diffWorkbooks'
+import { createConditionalStyler } from './conditionalStyle'
 import { DrawingLayer, type PlacedDrawing } from './DrawingLayer'
 import { isMergeMaster, useMergeLookup } from './useMergeLookup'
 import { useBlobUrls } from './useBlobUrls'
 import { cellAddress, columnLetter } from '../xlsx/cellRef'
-import { cellStyleProps } from '../xlsx/cellStyle'
+import { applyConditionalStyle, cellStyleProps, type CellStyle } from '../xlsx/cellStyle'
 import { axisOffset, buildAxis, collectPictureBlobs, placeItem } from '../xlsx/drawingLayout'
 import { formatCellValue } from '../xlsx/formatValue'
 import type { SheetModel } from '../xlsx/types'
@@ -155,6 +156,16 @@ export function Grid({ sheet, diff, onSelectionChange, activeFilterCols, onFilte
     }
     return map
   }, [sheet.filters, activeFilterCols])
+  // 조건부서식은 칸 데이터와 규칙에만 의존한다(선택/스크롤/필터 숨김과 무관) — 그 둘이 같으면 평가 결과 캐시를 재사용한다.
+  const conditionalStyler = useMemo(
+    () => createConditionalStyler({ rows: sheet.rows, conditionalFormats: sheet.conditionalFormats }),
+    [sheet.rows, sheet.conditionalFormats],
+  )
+  const styleAt = (row: number, col: number, base: CellStyle | null): CellStyle | null => {
+    const cf = conditionalStyler?.(row, col)
+    return cf ? applyConditionalStyle(base, cf) : base
+  }
+
   const pictureBlobs = useMemo(() => collectPictureBlobs(sheet.drawings), [sheet.drawings])
   const urlFor = useBlobUrls(pictureBlobs)
 
@@ -335,7 +346,7 @@ export function Grid({ sheet, diff, onSelectionChange, activeFilterCols, onFilte
                   data-selected={inRange(selection, rowNum, col)}
                   title="병합된 셀 — 값은 왼쪽 위 셀에 있어요"
                   style={{
-                    ...cellStyleProps(masterCell?.style ?? null, inRange(selection, rowNum, col)),
+                    ...cellStyleProps(styleAt(merge.r0, merge.c0, masterCell?.style ?? null), inRange(selection, rowNum, col)),
                     ...(isLastMergedRow ? {} : { borderBottom: 'none' }),
                   }}
                   onMouseDown={(e) => beginSelect(rowNum, col, e.shiftKey)}
@@ -385,7 +396,7 @@ export function Grid({ sheet, diff, onSelectionChange, activeFilterCols, onFilte
                   justifyContent: isNumeric ? 'flex-end' : 'flex-start',
                   gridColumn: colSpan > 1 ? `span ${colSpan}` : undefined,
                   ...cellStyleProps(
-                    cell?.style ?? null,
+                    styleAt(rowNum, col, cell?.style ?? null),
                     inRange(selection, rowNum, col) || Boolean(cellDiff && cellDiff.status !== 'unchanged'),
                   ),
                   // 세로로 병합된 마스터 행이면(아래로 더 이어짐) 다음 칸과의 구분선을

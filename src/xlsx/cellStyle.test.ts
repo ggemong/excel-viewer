@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { cellStyleProps, extractCellStyle } from './cellStyle'
+import { applyConditionalStyle, cellStyleProps, extractCellStyle } from './cellStyle'
 import type { ThemeColors } from './themeColor'
 
 const theme: ThemeColors = {
@@ -16,7 +16,7 @@ describe('extractCellStyle', () => {
       fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFF00' } },
       font: { bold: true, italic: true, color: { argb: 'FFFF0000' } },
     })
-    expect(style).toEqual({ bg: '#FFFF00', color: '#FF0000', bold: true, italic: true, border: null, align: null })
+    expect(style).toEqual({ bg: '#FFFF00', color: '#FF0000', bold: true, italic: true, border: null, align: null, colorExplicit: true })
   })
 
   it('배경만 있고 글자색이 없으면 밝기에 맞춰 대비색을 자동으로 고른다', () => {
@@ -154,5 +154,34 @@ describe('cellStyleProps', () => {
     const props = cellStyleProps(bordered, false)
     expect(props.borderTop).toBe('1px solid #FF0000')
     expect(props.borderRight).toBeUndefined()
+  })
+})
+
+describe('applyConditionalStyle', () => {
+  it('조건부서식이 정한 속성만 덮어쓰고 나머지 셀 서식은 남긴다', () => {
+    const base = { bg: '#FFFFFF', color: '#112233', bold: true, italic: false, border: null, align: null, colorExplicit: true as const }
+    const out = applyConditionalStyle(base, { bg: '#FFC7CE', strike: true })
+    expect(out).toMatchObject({ bg: '#FFC7CE', bold: true, strike: true })
+    expect(out.color).toBe('#112233')
+  })
+
+  it('배경만 바뀌고 글자색이 자동 계산된 값이었으면 새 배경에 맞춰 다시 고른다', () => {
+    const base = { bg: '#000000', color: '#f5f5f5', bold: false, italic: false, border: null, align: null }
+    expect(applyConditionalStyle(base, { bg: '#FFFFFF' }).color).toBe('#1a1a1a')
+  })
+
+  it('원래 서식이 없던 칸에 연한 배경만 입혀도 읽히는 글자색이 붙는다', () => {
+    const out = applyConditionalStyle(null, { bg: '#FFF2CC' })
+    expect(out.bg).toBe('#FFF2CC')
+    expect(out.color).toBe('#1a1a1a')
+  })
+
+  it('조건부서식이 글자색을 정하면 그 색을 명시 색으로 쓴다', () => {
+    expect(applyConditionalStyle(null, { color: '#FF0000' })).toMatchObject({ color: '#FF0000', colorExplicit: true })
+  })
+
+  it('취소선/밑줄은 textDecoration으로 변환된다', () => {
+    const out = applyConditionalStyle(null, { strike: true, underline: true })
+    expect(cellStyleProps(out, false).textDecoration).toBe('line-through underline')
   })
 })

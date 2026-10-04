@@ -13,6 +13,7 @@
  * 유지한다"는 규칙을 셀 렌더링 코드에 직접 섞지 않고 여기 모아뒀다.
  */
 import type { CSSProperties } from 'react'
+import type { CfStyle } from './conditionalFormat'
 import { resolveThemeColor, type ThemeColors } from './themeColor'
 
 export interface CellBorderSide {
@@ -41,9 +42,17 @@ export interface CellStyle {
   italic: boolean
   border: CellBorder | null
   align: CellAlign | null
+  /** 취소선/밑줄 — 있을 때만 true로 둔다(없으면 키 자체가 없음). */
+  strike?: true
+  underline?: true
+  /**
+   * 글자색이 파일에 명시된 값인가(true) 아니면 배경에서 자동 계산한 대비색인가(없음). 조건부서식이
+   * 배경만 바꿀 때, 명시된 글자색은 지키고 자동 계산된 색만 새 배경에 맞춰 다시 고르기 위해 구분한다.
+   */
+  colorExplicit?: true
 }
 
-interface ExcelColor {
+export interface ExcelColor {
   argb?: string
   theme?: number
   tint?: number
@@ -58,6 +67,8 @@ interface CellFill {
 interface CellFont {
   bold?: boolean
   italic?: boolean
+  strike?: boolean
+  underline?: boolean | string
   color?: ExcelColor
 }
 
@@ -86,7 +97,7 @@ function argbToHex(argb: string | undefined): string | null {
 }
 
 /** 직접 RGB(argb)를 우선 쓰고, 없으면 테마 인덱스(theme+tint)로 해석한다. 둘 다 없으면 null. */
-function resolveColor(color: ExcelColor | undefined, theme: ThemeColors | null): string | null {
+export function resolveColor(color: ExcelColor | undefined, theme: ThemeColors | null): string | null {
   if (!color) return null
   const direct = argbToHex(color.argb)
   if (direct) return direct
@@ -119,7 +130,7 @@ function luminance(hex: string): number {
  * 지정 안 했는데 배경만 밝으면, 앱이 다크 테마라고 밝은 기본 글자색을 그대로 쓰면
  * 밝은 배경 위에 밝은 글씨가 돼서 안 보인다. 앱 테마와 무관하게 항상 읽히게 한다.
  */
-function contrastColor(bgHex: string): string {
+export function contrastColor(bgHex: string): string {
   return luminance(bgHex) > 0.5 ? '#1a1a1a' : '#f5f5f5'
 }
 
@@ -182,6 +193,8 @@ export function extractCellStyle(
   const color = explicitColor ?? (bg ? contrastColor(bg) : null)
   const bold = Boolean(font?.bold)
   const italic = Boolean(font?.italic)
+  const strike = Boolean(font?.strike)
+  const underline = Boolean(font?.underline) && font?.underline !== 'none'
 
   const borderModel = cell.border
   const border = borderModel
@@ -204,8 +217,18 @@ export function extractCellStyle(
     : null
   const hasAlign = align && (align.h || align.v || align.wrap)
 
-  if (!bg && !color && !bold && !italic && !hasBorder && !hasAlign) return null
-  return { bg, color, bold, italic, border: hasBorder ? border : null, align: hasAlign ? align : null }
+  if (!bg && !color && !bold && !italic && !strike && !underline && !hasBorder && !hasAlign) return null
+  return {
+    bg,
+    color,
+    bold,
+    italic,
+    border: hasBorder ? border : null,
+    align: hasAlign ? align : null,
+    ...(strike ? { strike: true as const } : {}),
+    ...(underline ? { underline: true as const } : {}),
+    ...(explicitColor ? { colorExplicit: true as const } : {}),
+  }
 }
 
 const JUSTIFY_CONTENT: Record<NonNullable<CellAlign['h']>, CSSProperties['justifyContent']> = {
@@ -236,6 +259,7 @@ export function cellStyleProps(style: CellStyle | null, suppressBg: boolean): CS
     color: style.color ?? undefined,
     fontWeight: style.bold ? 700 : undefined,
     fontStyle: style.italic ? 'italic' : undefined,
+    textDecoration: [style.strike && 'line-through', style.underline && 'underline'].filter(Boolean).join(' ') || undefined,
   }
 
   if (style.align?.h) props.justifyContent = JUSTIFY_CONTENT[style.align.h]
@@ -249,4 +273,40 @@ export function cellStyleProps(style: CellStyle | null, suppressBg: boolean): CS
   if (b?.left) props.borderLeft = `${b.left.width} ${b.left.style} ${b.left.color}`
 
   return props
+}
+
+/**
+ * 조건부서식 결과(CfStyle)를 셀 서식 위에 덮어쓴다. 조건부서식이 정한 속성만 바뀌고 나머지는 셀 서식이 그대로 남는다.
+ *
+ * 배경이 바뀌는데 글자색은 안 정해졌으면: 파일이 명시한 글자색은 지키고, 배경에서 자동으로 고른 색(또는
+ * 색 없음)이었다면 새 배경에 맞춰 다시 고른다 — 안 그러면 연한 새 배경 위에 앱의 밝은 기본 글자색이 얹혀
+ * 읽히지 않는다(다크 테마).
+ */
+export function applyConditionalStyle(base: CellStyle | null, cf: CfStyle): CellStyle {
+  const bg = cf.bg ?? base?.bg ?? null
+  let color = cf.color ?? null
+  let colorExplicit = cf.color !== undefined
+  if (color === null) {
+    if (base?.colorExplicit) {
+      color = base.color
+      colorExplicit = true
+    } else if (cf.bg !== undefined) {
+      color = contrastColor(cf.bg)
+    } else {
+      color = base?.color ?? null
+    }
+  }
+  const strike = cf.strike ?? base?.strike
+  const underline = cf.underline ?? base?.underline
+  return {
+    bg,
+    color,
+    bold: cf.bold ?? base?.bold ?? false,
+    italic: cf.italic ?? base?.italic ?? false,
+    border: base?.border ?? null,
+    align: base?.align ?? null,
+    ...(strike ? { strike: true as const } : {}),
+    ...(underline ? { underline: true as const } : {}),
+    ...(colorExplicit ? { colorExplicit: true as const } : {}),
+  }
 }

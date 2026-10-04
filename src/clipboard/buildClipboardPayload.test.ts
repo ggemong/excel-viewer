@@ -17,6 +17,8 @@ const sheet: SheetModel = {
   hiddenRows: [],
   frozen: null,
   filters: [],
+  conditionalFormats: [],
+  skippedConditionalFormats: {},
   drawings: [],
   skippedDrawings: {},
   rows: [

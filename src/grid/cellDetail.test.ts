@@ -25,6 +25,8 @@ function sheetOf(rows: (CellModel | undefined)[][], merges: string[] = []): Shee
     hiddenRows: new Array(rows.length).fill(false),
     frozen: null,
     filters: [],
+    conditionalFormats: [],
+    skippedConditionalFormats: {},
     drawings: [],
     skippedDrawings: {},
   }

@@ -26,6 +26,8 @@ function sheetOf(rows: (CellModel | undefined)[][], extra: Partial<SheetModel> =
     hiddenRows: new Array(rows.length).fill(false),
     frozen: null,
     filters: [],
+    conditionalFormats: [],
+    skippedConditionalFormats: {},
     drawings: [],
     skippedDrawings: {},
     ...extra,

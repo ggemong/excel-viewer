@@ -38,6 +38,8 @@ function makeSheet(hiddenRows: boolean[] = new Array(7).fill(false)): SheetModel
     hiddenRows,
     frozen: null,
     filters: [{ headerRow: 1, lastRow: 7, firstCol: 1, lastCol: 2, hiddenButtonCols: [], activeCols: [] }],
+    conditionalFormats: [],
+    skippedConditionalFormats: {},
     drawings: [],
     skippedDrawings: {},
   }

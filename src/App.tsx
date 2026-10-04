@@ -6,6 +6,7 @@ import { describeCell } from './grid/cellDetail'
 import { FilterMenu } from './grid/FilterMenu'
 import { FilterStatusBar } from './grid/FilterStatusBar'
 import { Grid, type GridFocusRequest } from './grid/Grid'
+import { skippedConditionalNotice } from './grid/skippedConditionalNotice'
 import { skippedDrawingNotice } from './grid/skippedDrawingNotice'
 import { SummaryBar } from './grid/SummaryBar'
 import { Toolbar } from './grid/Toolbar'
@@ -157,7 +158,7 @@ function App() {
               {compareError}
             </div>
           )}
-          {[...workbook.warnings, skippedDrawingNotice(activeSheet.skippedDrawings)].filter(Boolean).map((notice) => (
+          {[...workbook.warnings, skippedDrawingNotice(activeSheet.skippedDrawings), skippedConditionalNotice(activeSheet.skippedConditionalFormats)].filter(Boolean).map((notice) => (
             <div key={notice} className="notice-bar" role="status">
               {notice}
             </div>

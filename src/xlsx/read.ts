@@ -3,6 +3,7 @@ import { extractCellStyle } from './cellStyle'
 import { interpretCellValue, interpretNote } from './cellValue'
 import { excelColumnWidthToPx, excelPointsToPx, measureDefaultFontWidth } from './columnWidth'
 import { readWorkbookDrawings, type SheetDrawings } from './drawing'
+import { extractConditionalFormats, type RawConditionalFormatting } from './conditionalFormat'
 import { buildAxis, requiredExtent } from './drawingLayout'
 import { autoFilterRangeText, buildSheetFilter, readAutoFilterDetails, type AutoFilterDetails } from './filter'
 import { parseTheme, type ThemeColors } from './themeColor'
@@ -150,6 +151,12 @@ async function readXlsx(file: File): Promise<WorkbookModel> {
 
     const merges = worksheet.model.merges ?? []
 
+    const conditional = extractConditionalFormats(
+      // ExcelJS의 타입 선언에는 이 속성이 빠져 있다(런타임에는 있다).
+      (worksheet as unknown as { conditionalFormattings: RawConditionalFormatting[] }).conditionalFormattings,
+      theme,
+    )
+
     const filterRange = autoFilterRangeText(worksheet.autoFilter)
     const sheetFilter = filterRange ? buildSheetFilter(filterRange, filterDetailsBySheet.get(worksheet.name) ?? null) : null
 
@@ -165,6 +172,8 @@ async function readXlsx(file: File): Promise<WorkbookModel> {
       hiddenRows,
       frozen,
       filters: sheetFilter ? [sheetFilter] : [],
+      conditionalFormats: conditional.formats,
+      skippedConditionalFormats: conditional.skipped,
       drawings: drawing?.items ?? [],
       skippedDrawings: drawing?.skipped ?? {},
     })
@@ -224,6 +233,8 @@ async function readCsv(file: File): Promise<WorkbookModel> {
         hiddenRows: Array(rowCount).fill(false),
         frozen: null,
         filters: [],
+        conditionalFormats: [],
+        skippedConditionalFormats: {},
         drawings: [],
         skippedDrawings: {},
       },

@@ -8,14 +8,12 @@
  * "[object Object]" 대신 눈에 띄는 표식(UNSUPPORTED_VALUE)으로 돌려준다 — 조용히
  * 추정하거나 빈칸으로 숨기지 않고 문제가 있다는 걸 사용자도 볼 수 있게 하기 위해서다.
  */
+import { dateToSerial } from './excelDate'
 import type { CellModel } from './types'
 
 /** 알려진 어떤 모양도 아닌 값이 올 때 화면에 찍는 표식. */
 export const UNSUPPORTED_VALUE = '#UNSUPPORTED'
 
-/** Excel 날짜 직렬번호의 기준일(1899-12-30)을 UTC 밀리초로. 1900 윤년 버그 보정 포함 기준. */
-const EXCEL_EPOCH_UTC_MS = Date.UTC(1899, 11, 30)
-const MS_PER_DAY = 86_400_000
 
 export interface InterpretedCell {
   value: CellModel['value']
@@ -25,15 +23,7 @@ export interface InterpretedCell {
   hyperlink: string | null
 }
 
-/**
- * Date -> Excel 직렬번호. ExcelJS는 날짜 서식 셀을 UTC 기준 Date로 주는데, 이걸
- * 문자열(ISO)로 바꿔 로컬 시간대로 다시 읽으면 시차만큼 시각이 밀린다(KST에서 12:00이
- * 21:00으로 보이던 버그). 직렬번호는 시간대와 무관한 순수 숫자라 그 문제 자체가 없고,
- * 숫자 서식 해석기(numberFormat.ts)가 날짜/시간 서식도 같은 경로로 처리할 수 있다.
- */
-export function dateToSerial(date: Date): number {
-  return (date.getTime() - EXCEL_EPOCH_UTC_MS) / MS_PER_DAY
-}
+export { dateToSerial }
 
 function scalar(raw: unknown): CellModel['value'] {
   if (raw === null || raw === undefined) return null
