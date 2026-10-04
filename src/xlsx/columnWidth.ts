@@ -3,6 +3,7 @@
  * Excel과 픽셀 단위로 똑같아지는 건 애초에 불가능하다(다른 OS/폰트 렌더링) — "비율이
  * 맞아 보이는 정도"가 현실적 목표다.
  */
+import { textWidth } from './textMetrics'
 
 /** 1pt = 1/72인치, CSS px는 96dpi 기준 — 고정 공식이라 폰트와 무관하다. */
 export function excelPointsToPx(points: number): number {
@@ -22,27 +23,18 @@ export function excelColumnWidthToPx(charWidth: number, mdw: number): number {
 
 let cachedMdw: number | null = null
 
+/** 캔버스를 못 쓰는 환경(CSS·캔버스가 없는 테스트 등)에서 쓰는 Calibri 11의 통상적인 MDW 근사값. */
+const FALLBACK_MDW = 7
+
 /**
- * 그리드 셀과 같은 폰트/크기로 숫자 '0' 하나의 폭을 잰다(MDW) — CSS 커스텀
- * 프로퍼티(--font/--fs-sm)를 그대로 읽어서, 토큰이 바뀌어도 여기 값을 따로
- * 맞춰줄 필요가 없게 한다. 캔버스를 못 쓰는 환경(SSR 등)이면 Calibri 11의
- * 통상적인 근사값(7)으로 대신한다 — 이 앱은 브라우저 전용이라 실제로는 항상
- * 캔버스 경로를 탄다.
+ * 그리드 셀과 같은 폰트/크기로 숫자 '0' 하나의 폭을 잰다(MDW) — 글꼴과 기본 크기는 CSS 토큰(--font/--fs-sm)을
+ * 그대로 읽어서(src/xlsx/textMetrics.ts), 토큰이 바뀌어도 여기 값을 따로 맞춰줄 필요가 없게 한다.
+ * 캔버스를 못 쓰는 환경이면 근사값(7)으로 대신한다 — 이 앱은 브라우저 전용이라 실제로는 항상 캔버스 경로를 탄다.
  */
 export function measureDefaultFontWidth(): number {
   if (cachedMdw !== null) return cachedMdw
-  if (typeof document === 'undefined') return 7
-
-  const canvas = document.createElement('canvas')
-  const ctx = canvas.getContext('2d')
-  if (!ctx) return 7
-
-  const rootStyle = getComputedStyle(document.documentElement)
-  const fontFamily = rootStyle.getPropertyValue('--font').trim() || 'sans-serif'
-  const fontSize = rootStyle.getPropertyValue('--fs-sm').trim() || '14px'
-
-  ctx.font = `${fontSize} ${fontFamily}`
-  const width = ctx.measureText('0').width
-  cachedMdw = width > 0 ? width : 7
+  const width = textWidth('0', null)
+  if (width === null || width <= 0) return FALLBACK_MDW
+  cachedMdw = width
   return cachedMdw
 }

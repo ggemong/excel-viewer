@@ -22,6 +22,7 @@ function sheetOf(rows: (CellModel | undefined)[][], extra: Partial<SheetModel> =
     merges: [],
     colWidths: new Array(colCount).fill(64),
     rowHeights: new Array(rows.length).fill(20),
+    autoHeightRows: [],
     hiddenCols: new Array(colCount).fill(false),
     hiddenRows: new Array(rows.length).fill(false),
     frozen: null,

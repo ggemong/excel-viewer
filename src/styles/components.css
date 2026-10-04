@@ -199,6 +199,20 @@
   white-space: nowrap;
   text-overflow: ellipsis;
   background: var(--bg-elev);
+  /* 본문 줄 높이(--lh-body 1.78)는 줄바꿈 칸에서 한 줄이 너무 커져 행이 불필요하게 길어진다. */
+  line-height: var(--lh-ui);
+}
+/* 줄바꿈 높이를 잴 때 쓰는 보이지 않는 칸(src/grid/wrapMeasure.ts) — 실제 칸과 같은 규칙을 쓰되 높이만 글에 맡긴다. */
+.grid-measure-host {
+  position: absolute;
+  left: -100000px;
+  top: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+.grid-cell--measure {
+  height: auto;
+  overflow: visible;
 }
 .grid-cell--colhead {
   justify-content: center;
@@ -271,6 +285,15 @@
   background: var(--bg-sunk);
   color: var(--text-3);
   text-decoration: line-through;
+}
+/* 옆 칸 위로 넘치는 글. 폭 상한(maxWidth)은 넘칠 수 있는 칸까지만 — 그 너머 값이 있는 칸은 가리지 않는다.
+   pointer-events: none 이라 넘친 글 위를 눌러도 아래 칸(빈 옆 칸)이 선택된다(Excel과 같다). */
+.grid-cell-spill {
+  flex: none;
+  overflow: hidden;
+  text-overflow: clip;
+  white-space: nowrap;
+  pointer-events: none;
 }
 .grid-cell-link {
   color: inherit;

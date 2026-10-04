@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { parseMergeRanges, type MergeRange } from '../xlsx/mergeRange'
+import { buildMergeLookup, type MergeRange } from '../xlsx/mergeRange'
 
 export type { MergeRange } from '../xlsx/mergeRange'
 export { isMergeMaster } from '../xlsx/mergeRange'
@@ -10,15 +10,5 @@ export { isMergeMaster } from '../xlsx/mergeRange'
  * 않으려면 어떤 칸이 마스터고 어떤 칸이 "덮인" 칸인지 직접 판별해야 한다.
  */
 export function useMergeLookup(merges: string[]): Map<string, MergeRange> {
-  return useMemo(() => {
-    const lookup = new Map<string, MergeRange>()
-    for (const range of parseMergeRanges(merges)) {
-      for (let r = range.r0; r <= range.r1; r++) {
-        for (let c = range.c0; c <= range.c1; c++) {
-          lookup.set(`${r},${c}`, range)
-        }
-      }
-    }
-    return lookup
-  }, [merges])
+  return useMemo(() => buildMergeLookup(merges), [merges])
 }

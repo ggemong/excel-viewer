@@ -50,6 +50,13 @@ export interface CellStyle {
    * 배경만 바꿀 때, 명시된 글자색은 지키고 자동 계산된 색만 새 배경에 맞춰 다시 고르기 위해 구분한다.
    */
   colorExplicit?: true
+  /**
+   * 글자 크기 = 통합문서 기본 글꼴 대비 배율(기본 글꼴과 같으면 키 자체가 없음). 절대 pt가 아니라 배율로 두는 이유:
+   * 열너비가 "기본 글꼴 숫자 폭" 단위라서, 화면의 기본 글자 크기(--fs-sm)를 기본 글꼴로 놓고 배율로 줄이고 늘려야
+   * 글자와 열너비의 비례가 파일과 같아진다. 실사용 파일은 칸의 80%가 9pt라, 이걸 무시하면 모든 글이 1.2배 크게
+   * 그려져 잘림이 훨씬 많아진다.
+   */
+  fontScale?: number
 }
 
 export interface ExcelColor {
@@ -65,6 +72,7 @@ interface CellFill {
 }
 
 interface CellFont {
+  size?: number
   bold?: boolean
   italic?: boolean
   strike?: boolean
@@ -180,10 +188,13 @@ const ALIGN_V: Record<string, CellAlign['v']> = { top: 'top', middle: 'middle', 
 /**
  * @param cell ExcelJS Cell — fill/font/border/alignment만 쓰므로 그것만 받는 최소 타입으로 받는다(테스트에서 실제 Cell 없이도 검증 가능).
  * @param theme 워크북 하나당 한 번만 파싱해서 넘겨받는다(src/xlsx/read.ts) — 셀마다 테마 XML을 다시 파싱하지 않기 위해서.
+ * @param defaultFontPt 통합문서 기본 글꼴 크기(pt, src/xlsx/defaultFont.ts). null이면 기준을 모르는 것이라 글자 크기를
+ * 조정하지 않는다(임의의 기본값으로 추정하지 않는다).
  */
 export function extractCellStyle(
   cell: { fill?: CellFill; font?: CellFont; border?: CellBorderModel; alignment?: CellAlignment },
   theme: ThemeColors | null = null,
+  defaultFontPt: number | null = null,
 ): CellStyle | null {
   const fill = cell.fill
   const bg = fill?.type === 'pattern' && fill.pattern === 'solid' ? resolveColor(fill.fgColor, theme) : null
@@ -195,6 +206,7 @@ export function extractCellStyle(
   const italic = Boolean(font?.italic)
   const strike = Boolean(font?.strike)
   const underline = Boolean(font?.underline) && font?.underline !== 'none'
+  const fontScale = fontScaleOf(font?.size, defaultFontPt)
 
   const borderModel = cell.border
   const border = borderModel
@@ -217,7 +229,7 @@ export function extractCellStyle(
     : null
   const hasAlign = align && (align.h || align.v || align.wrap)
 
-  if (!bg && !color && !bold && !italic && !strike && !underline && !hasBorder && !hasAlign) return null
+  if (!bg && !color && !bold && !italic && !strike && !underline && !fontScale && !hasBorder && !hasAlign) return null
   return {
     bg,
     color,
@@ -228,7 +240,20 @@ export function extractCellStyle(
     ...(strike ? { strike: true as const } : {}),
     ...(underline ? { underline: true as const } : {}),
     ...(explicitColor ? { colorExplicit: true as const } : {}),
+    ...(fontScale ? { fontScale } : {}),
   }
+}
+
+/** 이 이내의 배율 차이는 같은 크기로 본다(소수점 오차로 모든 칸에 배율이 붙는 걸 막는다). */
+const FONT_SCALE_EPSILON = 0.01
+/** 배율을 CSS에 그대로 박을 것이라 소수 3자리로 정리한다(0.8181818… 같은 값이 인라인 스타일에 길게 찍히지 않게). */
+const FONT_SCALE_DECIMALS = 1000
+
+function fontScaleOf(size: number | undefined, defaultFontPt: number | null): number | undefined {
+  if (!size || !defaultFontPt || size <= 0) return undefined
+  const ratio = size / defaultFontPt
+  if (Math.abs(ratio - 1) < FONT_SCALE_EPSILON) return undefined
+  return Math.round(ratio * FONT_SCALE_DECIMALS) / FONT_SCALE_DECIMALS
 }
 
 const JUSTIFY_CONTENT: Record<NonNullable<CellAlign['h']>, CSSProperties['justifyContent']> = {
@@ -259,12 +284,22 @@ export function cellStyleProps(style: CellStyle | null, suppressBg: boolean): CS
     color: style.color ?? undefined,
     fontWeight: style.bold ? 700 : undefined,
     fontStyle: style.italic ? 'italic' : undefined,
+    fontSize: style.fontScale ? `calc(var(--fs-sm) * ${style.fontScale})` : undefined,
     textDecoration: [style.strike && 'line-through', style.underline && 'underline'].filter(Boolean).join(' ') || undefined,
   }
 
-  if (style.align?.h) props.justifyContent = JUSTIFY_CONTENT[style.align.h]
+  if (style.align?.h) {
+    props.justifyContent = JUSTIFY_CONTENT[style.align.h]
+    // 줄바꿈된 여러 줄은 칸 안에서 줄마다 같은 쪽으로 정렬돼야 한다(justify-content는 글 덩어리 전체를 옮길 뿐이다).
+    props.textAlign = style.align.h
+  }
   if (style.align?.v) props.alignItems = ALIGN_ITEMS[style.align.v]
-  if (style.align?.wrap) props.whiteSpace = 'normal'
+  if (style.align?.wrap) {
+    // pre-wrap: 칸 안의 직접 줄바꿈(Alt+Enter)을 그대로 보여준다(normal이면 공백으로 뭉개진다).
+    // anywhere: 띄어쓰기 없는 긴 글(주소, URL)도 칸 폭에서 끊어 잘리지 않게 한다 — Excel도 그렇게 끊는다.
+    props.whiteSpace = 'pre-wrap'
+    props.overflowWrap = 'anywhere'
+  }
 
   const b = style.border
   if (b?.top) props.borderTop = `${b.top.width} ${b.top.style} ${b.top.color}`
@@ -298,6 +333,7 @@ export function applyConditionalStyle(base: CellStyle | null, cf: CfStyle): Cell
   }
   const strike = cf.strike ?? base?.strike
   const underline = cf.underline ?? base?.underline
+  const fontScale = base?.fontScale
   return {
     bg,
     color,
@@ -308,5 +344,6 @@ export function applyConditionalStyle(base: CellStyle | null, cf: CfStyle): Cell
     ...(strike ? { strike: true as const } : {}),
     ...(underline ? { underline: true as const } : {}),
     ...(colorExplicit ? { colorExplicit: true as const } : {}),
+    ...(fontScale ? { fontScale } : {}),
   }
 }

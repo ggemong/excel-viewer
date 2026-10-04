@@ -5,12 +5,17 @@ import { useClipboardCopy } from '../clipboard/useClipboardCopy'
 import type { SheetDiff } from '../diff/diffWorkbooks'
 import { createConditionalStyler } from './conditionalStyle'
 import { DrawingLayer, type PlacedDrawing } from './DrawingLayer'
+import { createSpillResolver } from './textSpill'
+import { useFittedRowHeights } from './useFittedRowHeights'
+import { useFontsVersion } from './useFontsVersion'
 import { isMergeMaster, useMergeLookup } from './useMergeLookup'
 import { useBlobUrls } from './useBlobUrls'
+import { cellHorizontalChrome } from './wrapMeasure'
 import { cellAddress, columnLetter } from '../xlsx/cellRef'
 import { applyConditionalStyle, cellStyleProps, type CellStyle } from '../xlsx/cellStyle'
 import { axisOffset, buildAxis, collectPictureBlobs, placeItem } from '../xlsx/drawingLayout'
 import { formatCellValue } from '../xlsx/formatValue'
+import { textWidth } from '../xlsx/textMetrics'
 import type { SheetModel } from '../xlsx/types'
 
 /**
@@ -89,6 +94,9 @@ export function Grid({ sheet, diff, onSelectionChange, activeFilterCols, onFilte
   }
   const { copyRange, copied } = useClipboardCopy()
   const mergeLookup = useMergeLookup(sheet.merges)
+  // 줄바꿈 글이 잘리는 행을 키운 높이(파일 값 + 화면 글꼴에서의 줄 수). 아래 모든 행 높이는 이 값을 쓴다.
+  const fontsVersion = useFontsVersion()
+  const rowHeights = useFittedRowHeights(sheet, fontsVersion)
 
   // 숨긴 열은 그리드 트랙 자체를 안 만든다(Excel이 숨긴 열을 아예 안 보여주는 것과
   // 동일) — 선택·복사는 여전히 숨긴 열을 포함한 논리적 범위(행/열 번호)로 동작하고,
@@ -121,9 +129,13 @@ export function Grid({ sheet, diff, onSelectionChange, activeFilterCols, onFilte
     // 모든 행 높이를 파일 읽을 때 미리 다 알고 있어서(런타임 측정이 아님) 이
     // 추정치가 처음부터 정확하다 — 가변 가상화에서 흔한 "늦은 재측정으로 스크롤
     // 위치가 튀는" 문제가 없다.
-    estimateSize: (index) => sheet.rowHeights[scrollableRowNumbers[index] - 1] ?? ROW_HEIGHT_FALLBACK,
+    estimateSize: (index) => rowHeights[scrollableRowNumbers[index] - 1] ?? ROW_HEIGHT_FALLBACK,
     overscan: 12,
   })
+  // 행 높이가 나중에 바뀌면(글꼴이 늦게 도착해 줄 수가 달라질 때) 가상 스크롤러가 옛 크기를 쥐고 있지 않게 비운다.
+  useEffect(() => {
+    rowVirtualizer.measure()
+  }, [rowHeights, rowVirtualizer])
 
   // 방향키 이동 시 그 행이 스크롤 가상화 쪽 몇 번째 항목인지 바로 찾기 위한
   // 역방향 조회 — 매 키 입력마다 scrollableRowNumbers를 선형 탐색하지 않기 위해서다.
@@ -136,7 +148,7 @@ export function Grid({ sheet, diff, onSelectionChange, activeFilterCols, onFilte
   // 그림/도형: 시트 좌표(숨긴 열/행은 폭 0)로 배치하고, 틀고정 영역 안에 완전히 들어가는 것은
   // 고정 블록에, 나머지는 스크롤 본문에 올린다(틀고정 위에 그려진 그림이 같이 스크롤돼 어긋나지 않게).
   const colAxis = useMemo(() => buildAxis(sheet.colWidths, sheet.hiddenCols, OUT_OF_RANGE_CELL_SIZE), [sheet.colWidths, sheet.hiddenCols])
-  const rowAxis = useMemo(() => buildAxis(sheet.rowHeights, sheet.hiddenRows, OUT_OF_RANGE_CELL_SIZE), [sheet.rowHeights, sheet.hiddenRows])
+  const rowAxis = useMemo(() => buildAxis(rowHeights, sheet.hiddenRows, OUT_OF_RANGE_CELL_SIZE), [rowHeights, sheet.hiddenRows])
   const frozenHeight = axisOffset(rowAxis, frozenRowCount)
   const { frozenPlaced, scrollPlaced } = useMemo(() => {
     const placed: PlacedDrawing[] = sheet.drawings.map((item, index) => ({ item, index, box: placeItem(item, colAxis, rowAxis) }))
@@ -156,6 +168,22 @@ export function Grid({ sheet, diff, onSelectionChange, activeFilterCols, onFilte
     }
     return map
   }, [sheet.filters, activeFilterCols])
+  // 한 줄 글이 칸보다 길고 옆 칸이 비어 있으면 그 위로 넘쳐 보이게 한다(규칙은 textSpill.ts). 글자 폭은 글꼴에 달려 있어서
+  // 글꼴이 도착하면(fontsVersion) 다시 만든다.
+  const spillAt = useMemo(
+    () =>
+      createSpillResolver({
+        rows: sheet.rows,
+        colWidths: sheet.colWidths,
+        visibleCols: visibleColNumbers,
+        merged: mergeLookup,
+        isBlocked: (row, col) => filterButtons.has(`${row},${col}`),
+        cellChrome: cellHorizontalChrome(),
+        measure: textWidth,
+      }),
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+    [sheet.rows, sheet.colWidths, visibleColNumbers, mergeLookup, filterButtons, fontsVersion],
+  )
   // 조건부서식은 칸 데이터와 규칙에만 의존한다(선택/스크롤/필터 숨김과 무관) — 그 둘이 같으면 평가 결과 캐시를 재사용한다.
   const conditionalStyler = useMemo(
     () => createConditionalStyler({ rows: sheet.rows, conditionalFormats: sheet.conditionalFormats }),
@@ -374,6 +402,7 @@ export function Grid({ sheet, diff, onSelectionChange, activeFilterCols, onFilte
                   ? 'match'
                   : undefined
             const cell = row?.[colIndex]
+            const spill = spillAt(rowNum, col)
             const isNumeric = typeof cell?.value === 'number'
             const cellDiff = diff?.cells[rowNum - 1]?.[colIndex]
             const diffTitle =
@@ -403,6 +432,8 @@ export function Grid({ sheet, diff, onSelectionChange, activeFilterCols, onFilte
                   // 지워 전체가 하나로 이어진 모양이 되게 한다(위 continuation 칸 처리와
                   // 짝을 이루는 로직).
                   ...(merge && merge.r1 > rowNum ? { borderBottom: 'none' } : {}),
+                  // 글이 옆 칸 위로 넘칠 칸: 칸 밖도 보이게 하고, 뒤에 그려지는 옆 칸 배경 위에 올린다.
+                  ...(spill ? { overflow: 'visible', zIndex: 1 } : {}),
                 }}
                 onMouseDown={(e) => beginSelect(rowNum, col, e.shiftKey)}
                 onMouseEnter={() => extendSelect(rowNum, col)}
@@ -411,6 +442,10 @@ export function Grid({ sheet, diff, onSelectionChange, activeFilterCols, onFilte
                   <a href={cell.hyperlink} target="_blank" rel="noopener noreferrer" className="grid-cell-link">
                     {formatCellValue(cell)}
                   </a>
+                ) : spill ? (
+                  <span className="grid-cell-spill" style={{ maxWidth: spill.maxWidth }}>
+                    {formatCellValue(cell)}
+                  </span>
                 ) : (
                   formatCellValue(cell)
                 )}
@@ -503,7 +538,7 @@ export function Grid({ sheet, diff, onSelectionChange, activeFilterCols, onFilte
 
         {frozenRowNumbers.length > 0 && (
           <div style={{ position: 'sticky', top: HEADER_HEIGHT, zIndex: 1 }}>
-            {frozenRowNumbers.map((rowNum) => renderRow(rowNum, sheet.rowHeights[rowNum - 1] ?? ROW_HEIGHT_FALLBACK, {}))}
+            {frozenRowNumbers.map((rowNum) => renderRow(rowNum, rowHeights[rowNum - 1] ?? ROW_HEIGHT_FALLBACK, {}))}
             <DrawingLayer placed={frozenPlaced} offsetX={ROW_NUM_WIDTH} offsetY={0} urlFor={urlFor} searchState={searchShapeState} />
           </div>
         )}
@@ -512,7 +547,7 @@ export function Grid({ sheet, diff, onSelectionChange, activeFilterCols, onFilte
         <div style={{ height: rowVirtualizer.getTotalSize(), position: 'relative', zIndex: 0 }}>
           {rowVirtualizer.getVirtualItems().map((virtualRow) => {
             const rowNum = scrollableRowNumbers[virtualRow.index]
-            const rowHeight = sheet.rowHeights[rowNum - 1] ?? ROW_HEIGHT_FALLBACK
+            const rowHeight = rowHeights[rowNum - 1] ?? ROW_HEIGHT_FALLBACK
             return renderRow(rowNum, rowHeight, {
               position: 'absolute',
               top: 0,

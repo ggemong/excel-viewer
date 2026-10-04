@@ -39,6 +39,12 @@ export interface SheetModel {
   colWidths: number[]
   /** px, 0-based(rowHeights[0] = 1행). CSV는 전부 기본값. */
   rowHeights: number[]
+  /**
+   * true인 행은 높이를 사용자가 직접 정하지 않은(customHeight 아님) 자동 높이 행 — 줄바꿈 글이 저장된 높이보다
+   * 길면 화면에서 키워도 되는 행이다(src/grid/rowFit.ts). 줄바꿈 칸이 없는 시트는 원본 XML을 읽지 않으므로
+   * 전부 false(맞출 것이 없다). 못 읽은 경우도 false라서 "모르면 저장된 높이를 그대로 쓴다".
+   */
+  autoHeightRows: boolean[]
   /** true인 인덱스는 숨긴 열/행 — Grid.tsx가 건너뛴다(Phase D). */
   hiddenCols: boolean[]
   hiddenRows: boolean[]

@@ -21,6 +21,7 @@ function sheetOf(rows: (CellModel | undefined)[][], merges: string[] = []): Shee
     merges,
     colWidths: [64, 64, 64],
     rowHeights: new Array(rows.length).fill(20),
+    autoHeightRows: [],
     hiddenCols: [false, false, false],
     hiddenRows: new Array(rows.length).fill(false),
     frozen: null,

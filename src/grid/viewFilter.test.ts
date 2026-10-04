@@ -34,6 +34,7 @@ function makeSheet(hiddenRows: boolean[] = new Array(7).fill(false)): SheetModel
     merges: [],
     colWidths: [80, 80],
     rowHeights: new Array(7).fill(20),
+    autoHeightRows: [],
     hiddenCols: [false, false],
     hiddenRows,
     frozen: null,

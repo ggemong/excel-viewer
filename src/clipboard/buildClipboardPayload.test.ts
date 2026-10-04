@@ -13,6 +13,7 @@ const sheet: SheetModel = {
   merges: [],
   colWidths: [],
   rowHeights: [],
+  autoHeightRows: [],
   hiddenCols: [],
   hiddenRows: [],
   frozen: null,

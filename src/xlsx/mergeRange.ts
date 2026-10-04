@@ -31,3 +31,19 @@ export function findMergeAt(ranges: MergeRange[], row: number, col: number): Mer
   }
   return null
 }
+
+/**
+ * (row, col) -> 그 칸이 속한 병합 범위("행,열" 키). 병합 범위 안의 모든 칸(마스터 포함)이 들어 있다.
+ * 화면(useMergeLookup)과 행 높이 맞춤(src/grid/rowFit.ts)이 같은 규칙을 쓰도록 한 곳에 둔다.
+ */
+export function buildMergeLookup(merges: string[]): Map<string, MergeRange> {
+  const lookup = new Map<string, MergeRange>()
+  for (const range of parseMergeRanges(merges)) {
+    for (let r = range.r0; r <= range.r1; r++) {
+      for (let c = range.c0; c <= range.c1; c++) {
+        lookup.set(`${r},${c}`, range)
+      }
+    }
+  }
+  return lookup
+}

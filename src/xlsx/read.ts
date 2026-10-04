@@ -2,10 +2,12 @@ import { columnLetter } from './cellRef'
 import { extractCellStyle } from './cellStyle'
 import { interpretCellValue, interpretNote } from './cellValue'
 import { excelColumnWidthToPx, excelPointsToPx, measureDefaultFontWidth } from './columnWidth'
+import { readDefaultFontPt } from './defaultFont'
 import { readWorkbookDrawings, type SheetDrawings } from './drawing'
 import { extractConditionalFormats, type RawConditionalFormatting } from './conditionalFormat'
 import { buildAxis, requiredExtent } from './drawingLayout'
 import { autoFilterRangeText, buildSheetFilter, readAutoFilterDetails, type AutoFilterDetails } from './filter'
+import { readCustomHeightRows } from './rowHeights'
 import { parseTheme, type ThemeColors } from './themeColor'
 import type { CellModel, SheetModel, WorkbookModel } from './types'
 import { listSheetParts } from './workbookParts'
@@ -60,34 +62,55 @@ async function readXlsx(file: File): Promise<WorkbookModel> {
   // 그림/도형은 ExcelJS가 일부만 읽고 나머지는 버려서 원본 XML을 직접 읽는다(src/xlsx/drawing.ts).
   // 이쪽이 실패해도 셀 데이터는 이미 읽혔으므로 파일 열기 자체는 막지 않고 경고로만 알린다.
   const warnings: string[] = []
+  const describe = (err: unknown) => (err instanceof Error ? err.message : String(err))
   let drawingsBySheet = new Map<string, SheetDrawings>()
   // 자동 필터의 "조건"(어느 열이 필터링 중인지)도 ExcelJS가 버리는 정보라 같은 ZIP에서 읽는다.
   // 필터 범위 자체는 ExcelJS가 주므로, 필터가 있는 시트만 원본 XML을 연다(큰 시트 이중 해제 방지).
   const filterDetailsBySheet = new Map<string, AutoFilterDetails | null>()
+  // 시트 이름 -> 시트 XML 경로(필터 조건, 행높이 정보를 원본에서 읽을 때 쓴다).
+  let sheetPaths = new Map<string, string>()
+  // 통합문서 기본 글꼴 크기(pt). 못 읽으면 null이고, 그러면 칸별 글자 크기를 조정하지 않는다(src/xlsx/defaultFont.ts).
+  let defaultFontPt: number | null = null
+  // 아래 원본 XML 읽기들은 서로 독립이다 — 하나가 실패해도 나머지와 셀 데이터는 그대로 보여준다.
+  let zip: ZipArchive | null = null
   try {
-    const zip = ZipArchive.open(buffer)
-    const result = await readWorkbookDrawings(zip, theme)
-    drawingsBySheet = result.bySheet
-    warnings.push(...result.warnings)
-
-    const sheetPaths = new Map((await listSheetParts(zip)).map((part) => [part.name, part.path]))
-    for (const ws of workbook.worksheets) {
-      const path = sheetPaths.get(ws.name)
-      if (!ws.autoFilter || ws.state !== 'visible' || !path) continue
-      try {
-        filterDetailsBySheet.set(ws.name, await readAutoFilterDetails(zip, path))
-      } catch (err) {
-        warnings.push(`"${ws.name}" 시트의 필터 조건을 읽지 못했어요: ${err instanceof Error ? err.message : String(err)}`)
-      }
-    }
+    zip = ZipArchive.open(buffer)
   } catch (err) {
-    warnings.push(`그림/도형을 읽지 못했어요: ${err instanceof Error ? err.message : String(err)}`)
+    warnings.push(`파일 구조를 읽지 못해 그림/도형·필터 조건·글자 크기를 반영하지 못했어요: ${describe(err)}`)
+  }
+  if (zip) {
+    try {
+      defaultFontPt = await readDefaultFontPt(zip)
+    } catch (err) {
+      warnings.push(`기본 글꼴 크기를 읽지 못해 글자 크기를 반영하지 못했어요: ${describe(err)}`)
+    }
+    try {
+      const result = await readWorkbookDrawings(zip, theme)
+      drawingsBySheet = result.bySheet
+      warnings.push(...result.warnings)
+    } catch (err) {
+      warnings.push(`그림/도형을 읽지 못했어요: ${describe(err)}`)
+    }
+    try {
+      sheetPaths = new Map((await listSheetParts(zip)).map((part) => [part.name, part.path]))
+      for (const ws of workbook.worksheets) {
+        const path = sheetPaths.get(ws.name)
+        if (!ws.autoFilter || ws.state !== 'visible' || !path) continue
+        try {
+          filterDetailsBySheet.set(ws.name, await readAutoFilterDetails(zip, path))
+        } catch (err) {
+          warnings.push(`"${ws.name}" 시트의 필터 조건을 읽지 못했어요: ${describe(err)}`)
+        }
+      }
+    } catch (err) {
+      warnings.push(`시트 목록을 읽지 못해 필터 조건·행 높이 정보를 반영하지 못했어요: ${describe(err)}`)
+    }
   }
 
   const sheets: SheetModel[] = []
-  workbook.eachSheet((worksheet) => {
+  for (const worksheet of workbook.worksheets) {
     // 숨김/완전숨김 시트는 Excel도 탭에 안 보여준다(Excel의 "숨기기" 의도 존중).
-    if (worksheet.state !== 'visible') return
+    if (worksheet.state !== 'visible') continue
 
     const defaultRowPt = worksheet.properties?.defaultRowHeight ?? DEFAULT_ROW_HEIGHT_PT
     const defaultColChars = worksheet.properties?.defaultColWidth ?? DEFAULT_COLUMN_CHAR_WIDTH
@@ -99,6 +122,7 @@ async function readXlsx(file: File): Promise<WorkbookModel> {
     const rows: (CellModel | undefined)[][] = []
     const rowHeights: number[] = []
     const hiddenRows: boolean[] = []
+    let hasWrappedText = false
 
     for (let r = 1; r <= rowCount; r++) {
       const row = worksheet.getRow(r)
@@ -115,7 +139,9 @@ async function readXlsx(file: File): Promise<WorkbookModel> {
           rowCells.push(undefined)
           continue
         }
-        rowCells.push(cellToModel(cell, theme, note))
+        const model = cellToModel(cell, theme, note, defaultFontPt)
+        if (model.style?.align?.wrap && typeof model.value === 'string') hasWrappedText = true
+        rowCells.push(model)
       }
       rows.push(rowCells)
     }
@@ -143,6 +169,18 @@ async function readXlsx(file: File): Promise<WorkbookModel> {
       hiddenRows.push(false)
     }
 
+    // 줄바꿈 글이 있는 시트만 "어느 행이 직접 정한 높이인가"를 원본에서 읽는다(큰 시트 XML을 불필요하게 또 읽지 않는다).
+    const autoHeightRows: boolean[] = new Array(rowHeights.length).fill(false)
+    const sheetPath = sheetPaths.get(worksheet.name)
+    if (hasWrappedText && zip && sheetPath) {
+      try {
+        const customRows = await readCustomHeightRows(zip, sheetPath)
+        for (let r = 1; r <= rowCount; r++) autoHeightRows[r - 1] = !customRows.has(r)
+      } catch (err) {
+        warnings.push(`"${worksheet.name}" 시트의 행 높이 정보를 읽지 못해 줄바꿈 글의 행 높이를 자동으로 맞추지 못했어요: ${describe(err)}`)
+      }
+    }
+
     // ExcelJS의 views 타입 선언(Array<Partial<WorksheetView>>)은 state로 좁혀도
     // ySplit이 안 보인다(frozen 전용 필드인데 Partial이 판별 유니온 좁히기를 못
     // 살림) — 필요한 필드만 최소 타입으로 캐스팅한다.
@@ -168,6 +206,7 @@ async function readXlsx(file: File): Promise<WorkbookModel> {
       merges,
       colWidths,
       rowHeights,
+      autoHeightRows,
       hiddenCols,
       hiddenRows,
       frozen,
@@ -177,12 +216,12 @@ async function readXlsx(file: File): Promise<WorkbookModel> {
       drawings: drawing?.items ?? [],
       skippedDrawings: drawing?.skipped ?? {},
     })
-  })
+  }
 
   return { fileName: file.name, sheets, warnings }
 }
 
-function cellToModel(cell: import('exceljs').Cell, theme: ThemeColors | null, note: string | undefined): CellModel {
+function cellToModel(cell: import('exceljs').Cell, theme: ThemeColors | null, note: string | undefined, defaultFontPt: number | null): CellModel {
   const { value, formula, hyperlink } = interpretCellValue(cell.value)
 
   return {
@@ -190,7 +229,7 @@ function cellToModel(cell: import('exceljs').Cell, theme: ThemeColors | null, no
     value,
     formula,
     numFmt: cell.numFmt ?? null,
-    style: extractCellStyle(cell, theme),
+    style: extractCellStyle(cell, theme, defaultFontPt),
     hyperlink: hyperlink ? sanitizeHyperlink(hyperlink) : null,
     ...(note ? { note } : {}),
   }
@@ -229,6 +268,7 @@ async function readCsv(file: File): Promise<WorkbookModel> {
         merges: [],
         colWidths: Array(colCount).fill(defaultColWidth),
         rowHeights: Array(rowCount).fill(defaultRowHeight),
+        autoHeightRows: Array(rowCount).fill(false),
         hiddenCols: Array(colCount).fill(false),
         hiddenRows: Array(rowCount).fill(false),
         frozen: null,

@@ -138,12 +138,19 @@ describe('cellStyleProps', () => {
     expect('alignItems' in props).toBe(false)
   })
 
-  it('정렬이 지정돼 있으면 justifyContent/alignItems/whiteSpace로 매핑한다', () => {
-    const aligned = { ...style, align: { h: 'center' as const, v: 'top' as const, wrap: true } }
+  it('정렬이 지정돼 있으면 justifyContent/alignItems/textAlign으로 매핑한다', () => {
+    const aligned = { ...style, align: { h: 'center' as const, v: 'top' as const, wrap: false } }
     const props = cellStyleProps(aligned, false)
     expect(props.justifyContent).toBe('center')
     expect(props.alignItems).toBe('flex-start')
-    expect(props.whiteSpace).toBe('normal')
+    expect(props.textAlign).toBe('center') // 여러 줄일 때 줄마다 가운데 정렬
+    expect('whiteSpace' in props).toBe(false)
+  })
+
+  it('줄바꿈 칸은 직접 줄바꿈을 살리고(pre-wrap) 긴 글도 칸 폭에서 끊는다(anywhere)', () => {
+    const props = cellStyleProps({ ...style, align: { h: null, v: null, wrap: true } }, false)
+    expect(props.whiteSpace).toBe('pre-wrap')
+    expect(props.overflowWrap).toBe('anywhere')
   })
 
   it('테두리를 border-{side} 문자열로 합친다', () => {
@@ -183,5 +190,38 @@ describe('applyConditionalStyle', () => {
   it('취소선/밑줄은 textDecoration으로 변환된다', () => {
     const out = applyConditionalStyle(null, { strike: true, underline: true })
     expect(cellStyleProps(out, false).textDecoration).toBe('line-through underline')
+  })
+})
+
+describe('글자 크기(fontScale)', () => {
+  it('기본 글꼴 대비 배율로 저장한다 — 11pt 기본에서 9pt는 약 0.818배', () => {
+    const style = extractCellStyle({ font: { size: 9 } }, null, 11)
+    expect(style?.fontScale).toBeCloseTo(0.818, 3)
+  })
+
+  it('기본 글꼴과 같은 크기면 배율을 두지 않는다(대부분의 칸에 쓸데없는 서식이 붙지 않게)', () => {
+    expect(extractCellStyle({ font: { size: 11 } }, null, 11)).toBeNull()
+    expect(extractCellStyle({ font: { size: 11.001 } }, null, 11)).toBeNull()
+  })
+
+  it('다른 서식이 있어도 배율은 같은 규칙으로 붙는다', () => {
+    const style = extractCellStyle({ font: { size: 14, bold: true } }, null, 11)
+    expect(style).toMatchObject({ bold: true })
+    expect(style?.fontScale).toBeCloseTo(1.273, 3)
+  })
+
+  it('기본 글꼴 크기를 모르면(null) 글자 크기를 조정하지 않는다 — 11pt 같은 값을 추정하지 않는다', () => {
+    expect(extractCellStyle({ font: { size: 9 } }, null, null)).toBeNull()
+    expect(extractCellStyle({ font: { size: 9 } })).toBeNull()
+  })
+
+  it('CSS에서는 기본 글자 크기 토큰에 배율을 곱한 값이 된다', () => {
+    const props = cellStyleProps(extractCellStyle({ font: { size: 9 } }, null, 11), false)
+    expect(props.fontSize).toBe('calc(var(--fs-sm) * 0.818)')
+  })
+
+  it('조건부서식이 서식을 덮어써도 글자 크기는 유지된다', () => {
+    const base = extractCellStyle({ font: { size: 9 } }, null, 11)
+    expect(applyConditionalStyle(base, { bg: '#FFC7CE' }).fontScale).toBeCloseTo(0.818, 3)
   })
 })
