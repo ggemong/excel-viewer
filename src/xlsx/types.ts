@@ -48,8 +48,11 @@ export interface SheetModel {
   /** true인 인덱스는 숨긴 열/행 — Grid.tsx가 건너뛴다(Phase D). */
   hiddenCols: boolean[]
   hiddenRows: boolean[]
-  /** 틀고정된 행 수(화면 최상단에 항상 보이는 행). 없으면 null. 열고정은 범위 밖(D-006 계획 참고). */
-  frozen: { rows: number } | null
+  /**
+   * 틀고정: 화면 위쪽에 항상 보이는 행 수와 왼쪽에 항상 보이는 열 수(숨긴 열도 센다 — Excel의 ySplit/xSplit).
+   * 둘 중 하나라도 있으면 객체, 둘 다 없으면 null.
+   */
+  frozen: { rows: number; cols: number } | null
   /**
    * 자동 필터(헤더 행 ▼ 버튼) — 없으면 빈 배열. 필터 조건으로 숨겨진 행은 이미 hiddenRows에
    * 들어 있고, 여기에는 "어디에 버튼이 있고 어느 열에 조건이 걸렸는가"라는 표시 정보만 둔다.

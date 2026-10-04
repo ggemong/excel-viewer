@@ -193,8 +193,10 @@ async function readXlsx(file: File): Promise<WorkbookModel> {
     // ExcelJS의 views 타입 선언(Array<Partial<WorksheetView>>)은 state로 좁혀도
     // ySplit이 안 보인다(frozen 전용 필드인데 Partial이 판별 유니온 좁히기를 못
     // 살림) — 필요한 필드만 최소 타입으로 캐스팅한다.
-    const frozenView = worksheet.views?.find((v) => v.state === 'frozen') as { ySplit?: number } | undefined
-    const frozen = frozenView?.ySplit ? { rows: frozenView.ySplit } : null
+    const frozenView = worksheet.views?.find((v) => v.state === 'frozen') as { xSplit?: number; ySplit?: number } | undefined
+    const frozenRows = frozenView?.ySplit ?? 0
+    const frozenCols = frozenView?.xSplit ?? 0
+    const frozen = frozenRows > 0 || frozenCols > 0 ? { rows: frozenRows, cols: frozenCols } : null
 
     const merges = mergeRangesOf(worksheet)
 

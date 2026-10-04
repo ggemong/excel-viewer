@@ -239,3 +239,30 @@ describe('mergeRangesOf', () => {
     expect(mergeRangesOf(fake)).toEqual(['A1:B1'])
   })
 })
+
+describe('틀 고정', () => {
+  async function frozenOf(views: Partial<ExcelJS.WorksheetView>[] | null) {
+    const wb = new ExcelJS.Workbook()
+    const ws = wb.addWorksheet('S')
+    ws.getCell('A1').value = 1
+    // ExcelJS의 타입은 보기 설정 전체 필드를 요구하지만 실제로는 일부만 줘도 된다.
+    if (views) ws.views = views as ExcelJS.WorksheetView[]
+    return (await readWorkbook(await toFile(wb))).sheets[0].frozen
+  }
+
+  it('행과 열을 함께 고정하면 둘 다 읽는다', async () => {
+    expect(await frozenOf([{ state: 'frozen', xSplit: 2, ySplit: 1 }])).toEqual({ rows: 1, cols: 2 })
+  })
+
+  it('열만 고정해도 고정으로 읽는다(행 수 0)', async () => {
+    expect(await frozenOf([{ state: 'frozen', xSplit: 1, ySplit: 0 }])).toEqual({ rows: 0, cols: 1 })
+  })
+
+  it('행만 고정하면 열 수 0', async () => {
+    expect(await frozenOf([{ state: 'frozen', xSplit: 0, ySplit: 3 }])).toEqual({ rows: 3, cols: 0 })
+  })
+
+  it('고정이 없으면 null', async () => {
+    expect(await frozenOf(null)).toBeNull()
+  })
+})

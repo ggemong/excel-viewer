@@ -214,6 +214,10 @@
   height: auto;
   overflow: visible;
 }
+/* 열 고정의 경계(마지막 고정 열의 오른쪽)를 눈에 띄게 한다. */
+.grid-cell--freeze-edge {
+  border-right: 2px solid var(--line-strong);
+}
 .grid-cell--colhead {
   justify-content: center;
   background: var(--bg-sunk);

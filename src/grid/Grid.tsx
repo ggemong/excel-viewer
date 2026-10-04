@@ -5,10 +5,11 @@ import { useClipboardCopy } from '../clipboard/useClipboardCopy'
 import type { SheetDiff } from '../diff/diffWorkbooks'
 import { createConditionalStyler } from './conditionalStyle'
 import { DrawingLayer, type PlacedDrawing } from './DrawingLayer'
+import { frozenColumnLayout } from './frozenColumns'
 import { createSpillResolver } from './textSpill'
 import { useFittedRowHeights } from './useFittedRowHeights'
 import { useFontsVersion } from './useFontsVersion'
-import { isMergeMaster, useMergeLookup } from './useMergeLookup'
+import { isMergeMaster, useMergeLookup, type MergeRange } from './useMergeLookup'
 import { useBlobUrls } from './useBlobUrls'
 import { cellHorizontalChrome } from './wrapMeasure'
 import { cellAddress, columnLetter } from '../xlsx/cellRef'
@@ -26,6 +27,8 @@ import type { SheetModel } from '../xlsx/types'
 const ROW_HEIGHT_FALLBACK = 34
 const HEADER_HEIGHT = 32
 const ROW_NUM_WIDTH = 44
+/** 가로로 스크롤해도 왼쪽에 붙어 있는 칸(행 번호, 고정 열)이 스크롤되는 칸 위에 그려지도록 하는 쌓임 순서. */
+const STICKY_COL_Z = 2
 /**
  * 그림 배치용 축에서 데이터 범위 밖 칸의 크기. read.ts가 그림이 걸친 영역까지 시트 크기를 미리
  * 늘려 두므로(requiredExtent) 범위 밖 앵커는 생기지 않는다 — 혹시 생겨도 가장자리에 붙게 0으로 둔다.
@@ -110,6 +113,25 @@ export function Grid({ sheet, diff, onSelectionChange, activeFilterCols, onFilte
   // (ySplit 아래부터만 가상 스크롤). 숨긴 행은 고정 블록/스크롤 블록 양쪽 모두에서
   // 제외한다.
   const frozenRowCount = sheet.frozen?.rows ?? 0
+  // 열 고정: 앞쪽 N개 열(+ 항상 붙어 있는 행 번호 칸)이 가로 스크롤에서 왼쪽에 남는다. 열을 가상화하지 않으니 sticky left만 주면 된다.
+  const frozenColCount = sheet.frozen?.cols ?? 0
+  const frozenCols = useMemo(
+    () => frozenColumnLayout(sheet.colWidths, visibleColNumbers, frozenColCount, ROW_NUM_WIDTH),
+    [sheet.colWidths, visibleColNumbers, frozenColCount],
+  )
+  // sticky는 "포함하는 상자" 안에서만 붙어 있으므로, 행 상자의 폭이 화면 폭이 아니라 열 전체 폭이어야 끝까지 스크롤해도 유지된다.
+  const totalWidth = useMemo(
+    () => ROW_NUM_WIDTH + visibleColNumbers.reduce((sum, c) => sum + sheet.colWidths[c - 1], 0),
+    [sheet.colWidths, visibleColNumbers],
+  )
+  /** 이 열이 고정이면 sticky 스타일. 고정 경계에 걸친 병합은 한 덩어리로 붙들 수 없어 고정하지 않는다(스크롤되어 나간다). */
+  const stickyColStyle = (col: number, merge?: MergeRange | null): CSSProperties => {
+    const left = frozenCols.left.get(col)
+    if (left === undefined || (merge && merge.c1 > frozenColCount)) return {}
+    return { position: 'sticky', left, zIndex: STICKY_COL_Z }
+  }
+  const cellClassName = (col: number, filterState: string | undefined) =>
+    ['grid-cell', filterState ? 'grid-cell--filter' : '', col === frozenCols.edgeCol ? 'grid-cell--freeze-edge' : ''].filter(Boolean).join(' ')
   const frozenRowNumbers = useMemo(
     () =>
       Array.from({ length: frozenRowCount }, (_, i) => i + 1).filter((r) => !sheet.hiddenRows[r - 1]),
@@ -177,12 +199,13 @@ export function Grid({ sheet, diff, onSelectionChange, activeFilterCols, onFilte
         colWidths: sheet.colWidths,
         visibleCols: visibleColNumbers,
         merged: mergeLookup,
-        isBlocked: (row, col) => filterButtons.has(`${row},${col}`),
+        // 고정 열은 스크롤에 따라 다른 칸 위에 얹히므로 글이 넘어가지도, 넘어오지도 않게 한다.
+        isBlocked: (row, col) => col <= frozenColCount || filterButtons.has(`${row},${col}`),
         cellChrome: cellHorizontalChrome(),
         measure: textWidth,
       }),
     // oxlint-disable-next-line react-hooks/exhaustive-deps
-    [sheet.rows, sheet.colWidths, visibleColNumbers, mergeLookup, filterButtons, fontsVersion],
+    [sheet.rows, sheet.colWidths, visibleColNumbers, mergeLookup, filterButtons, frozenColCount, fontsVersion],
   )
   // 조건부서식은 칸 데이터와 규칙에만 의존한다(선택/스크롤/필터 숨김과 무관) — 그 둘이 같으면 평가 결과 캐시를 재사용한다.
   const conditionalStyler = useMemo(
@@ -292,11 +315,14 @@ export function Grid({ sheet, diff, onSelectionChange, activeFilterCols, onFilte
       setFocusBoth({ row, col })
       const virtualIndex = rowVirtualIndexByNumber.get(row)
       if (virtualIndex !== undefined) rowVirtualizer.scrollToIndex(virtualIndex, { align: 'center' })
-      // 열은 가상화하지 않으므로 가로 스크롤은 직접 계산한다(화면 밖일 때만 움직인다).
-      const left = ROW_NUM_WIDTH + axisOffset(colAxis, col - 1)
-      const right = ROW_NUM_WIDTH + axisOffset(colAxis, col)
-      if (left < scroller.scrollLeft || right > scroller.scrollLeft + scroller.clientWidth) {
-        scroller.scrollTo({ left: Math.max(0, left - SEARCH_SCROLL_MARGIN) })
+      // 열은 가상화하지 않으므로 가로 스크롤은 직접 계산한다(화면 밖일 때만 움직인다). 행 번호 칸과 고정 열은 늘 보이고
+      // 그 밑으로 들어간 칸은 가려진 것이므로, 보이는 영역의 왼쪽 끝은 그 영역(frozenCols.width)의 오른쪽부터다.
+      if (col > frozenColCount) {
+        const left = ROW_NUM_WIDTH + axisOffset(colAxis, col - 1)
+        const right = ROW_NUM_WIDTH + axisOffset(colAxis, col)
+        if (left < scroller.scrollLeft + frozenCols.width || right > scroller.scrollLeft + scroller.clientWidth) {
+          scroller.scrollTo({ left: Math.max(0, left - frozenCols.width - SEARCH_SCROLL_MARGIN) })
+        }
       }
       return
     }
@@ -309,8 +335,8 @@ export function Grid({ sheet, diff, onSelectionChange, activeFilterCols, onFilte
       scroller.scrollTo({ top: Math.max(0, box.top - frozenHeight - SEARCH_SCROLL_MARGIN) })
     }
     const left = ROW_NUM_WIDTH + box.left
-    if (left < scroller.scrollLeft || left + box.width > scroller.scrollLeft + scroller.clientWidth) {
-      scroller.scrollTo({ left: Math.max(0, left - SEARCH_SCROLL_MARGIN) })
+    if (left < scroller.scrollLeft + frozenCols.width || left + box.width > scroller.scrollLeft + scroller.clientWidth) {
+      scroller.scrollTo({ left: Math.max(0, left - frozenCols.width - SEARCH_SCROLL_MARGIN) })
     }
     // 의존성을 nonce 하나로 둔 이유: 같은 위치로 다시 이동(Enter 반복)하는 것도 새 요청이어야 하고,
     // 시트/축이 바뀐 것만으로는 이동하면 안 된다.
@@ -339,11 +365,13 @@ export function Grid({ sheet, diff, onSelectionChange, activeFilterCols, onFilte
           display: 'grid',
           gridTemplateColumns,
           height: rowHeight,
+          width: totalWidth,
           ...wrapperStyle,
         }}
       >
         <div
           className="grid-cell grid-cell--rownum"
+          style={{ position: 'sticky', left: 0, zIndex: STICKY_COL_Z }}
           title={`${rowNum}행 전체 선택`}
           onClick={() => selectWhole({ row: rowNum, col: 1 }, { row: rowNum, col: sheet.colCount })}
         >
@@ -369,13 +397,14 @@ export function Grid({ sheet, diff, onSelectionChange, activeFilterCols, onFilte
               cells.push(
                 <div
                   key={col}
-                  className="grid-cell"
+                  className={cellClassName(col, undefined)}
                   data-merged="true"
                   data-selected={inRange(selection, rowNum, col)}
                   title="병합된 셀 — 값은 왼쪽 위 셀에 있어요"
                   style={{
                     ...cellStyleProps(styleAt(merge.r0, merge.c0, masterCell?.style ?? null), inRange(selection, rowNum, col)),
                     ...(isLastMergedRow ? {} : { borderBottom: 'none' }),
+                    ...stickyColStyle(col, merge),
                   }}
                   onMouseDown={(e) => beginSelect(rowNum, col, e.shiftKey)}
                   onMouseEnter={() => extendSelect(rowNum, col)}
@@ -415,7 +444,7 @@ export function Grid({ sheet, diff, onSelectionChange, activeFilterCols, onFilte
             cells.push(
               <div
                 key={col}
-                className={filterState ? 'grid-cell grid-cell--filter' : 'grid-cell'}
+                className={cellClassName(col, filterState)}
                 data-selected={inRange(selection, rowNum, col)}
                 data-search={searchState}
                 data-diff={cellDiff && cellDiff.status !== 'unchanged' ? cellDiff.status : undefined}
@@ -434,6 +463,7 @@ export function Grid({ sheet, diff, onSelectionChange, activeFilterCols, onFilte
                   ...(merge && merge.r1 > rowNum ? { borderBottom: 'none' } : {}),
                   // 글이 옆 칸 위로 넘칠 칸: 칸 밖도 보이게 하고, 뒤에 그려지는 옆 칸 배경 위에 올린다.
                   ...(spill ? { overflow: 'visible', zIndex: 1 } : {}),
+                  ...stickyColStyle(col, merge),
                 }}
                 onMouseDown={(e) => beginSelect(rowNum, col, e.shiftKey)}
                 onMouseEnter={() => extendSelect(rowNum, col)}
@@ -516,18 +546,18 @@ export function Grid({ sheet, diff, onSelectionChange, activeFilterCols, onFilte
           }
         }}
       >
-        <div style={{ display: 'grid', gridTemplateColumns, position: 'sticky', top: 0, zIndex: 2 }}>
+        <div style={{ display: 'grid', gridTemplateColumns, width: totalWidth, position: 'sticky', top: 0, zIndex: 2 }}>
           <div
             className="grid-cell grid-cell--colhead grid-cell--corner"
-            style={{ height: HEADER_HEIGHT }}
+            style={{ height: HEADER_HEIGHT, position: 'sticky', left: 0, zIndex: STICKY_COL_Z }}
             title="전체 선택"
             onClick={() => selectWhole({ row: 1, col: 1 }, { row: sheet.rowCount, col: sheet.colCount })}
           />
           {visibleColNumbers.map((col) => (
             <div
               key={col}
-              className="grid-cell grid-cell--colhead"
-              style={{ height: HEADER_HEIGHT }}
+              className={`${cellClassName(col, undefined)} grid-cell--colhead`}
+              style={{ height: HEADER_HEIGHT, ...stickyColStyle(col) }}
               title={`${columnLetter(col)}열 전체 선택`}
               onClick={() => selectWhole({ row: 1, col }, { row: sheet.rowCount, col })}
             >
@@ -552,7 +582,6 @@ export function Grid({ sheet, diff, onSelectionChange, activeFilterCols, onFilte
               position: 'absolute',
               top: 0,
               left: 0,
-              width: '100%',
               transform: `translateY(${virtualRow.start}px)`,
             })
           })}
