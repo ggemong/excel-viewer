@@ -2,12 +2,15 @@ import { columnLetter } from './cellRef'
 import { extractCellStyle } from './cellStyle'
 import { interpretCellValue } from './cellValue'
 import { excelColumnWidthToPx, excelPointsToPx, measureDefaultFontWidth } from './columnWidth'
+import { readWorkbookDrawings, type SheetDrawings } from './drawing'
+import { buildAxis, requiredExtent } from './drawingLayout'
 import { parseTheme, type ThemeColors } from './themeColor'
 import type { CellModel, SheetModel, WorkbookModel } from './types'
+import { ZipArchive } from './zipReader'
 
-// 파일에 열너비/행높이가 명시 안 된(사용자가 한 번도 손 안 댄) 열/행에 쓰는 Excel
-// 통상 기본값 — 실제로 <col>/<row> 항목 자체가 없는 경우가 흔해서(기본값인 열/행은
-// Excel이 아예 안 적음) ExcelJS가 undefined를 돌려줄 때를 대비해 필요하다.
+// 파일이 기본 열너비/행높이(sheetFormatPr)조차 안 적었을 때만 쓰는 Excel 통상 기본값.
+// 실제 파일은 보통 적어 두고(예: 맑은 고딕 기반 파일은 행높이 16.5pt, 열너비 9), 그 값을
+// 쓰지 않고 15pt/8.43으로 고정하면 명시 안 된 모든 행/열이 어긋난다.
 const DEFAULT_COLUMN_CHAR_WIDTH = 8.43
 const DEFAULT_ROW_HEIGHT_PT = 15
 
@@ -51,10 +54,27 @@ async function readXlsx(file: File): Promise<WorkbookModel> {
 
   const mdw = measureDefaultFontWidth()
 
+  // 그림/도형은 ExcelJS가 일부만 읽고 나머지는 버려서 원본 XML을 직접 읽는다(src/xlsx/drawing.ts).
+  // 이쪽이 실패해도 셀 데이터는 이미 읽혔으므로 파일 열기 자체는 막지 않고 경고로만 알린다.
+  const warnings: string[] = []
+  let drawingsBySheet = new Map<string, SheetDrawings>()
+  try {
+    const result = await readWorkbookDrawings(ZipArchive.open(buffer), theme)
+    drawingsBySheet = result.bySheet
+    warnings.push(...result.warnings)
+  } catch (err) {
+    warnings.push(`그림/도형을 읽지 못했어요: ${err instanceof Error ? err.message : String(err)}`)
+  }
+
   const sheets: SheetModel[] = []
   workbook.eachSheet((worksheet) => {
     // 숨김/완전숨김 시트는 Excel도 탭에 안 보여준다(Excel의 "숨기기" 의도 존중).
     if (worksheet.state !== 'visible') return
+
+    const defaultRowPt = worksheet.properties?.defaultRowHeight ?? DEFAULT_ROW_HEIGHT_PT
+    const defaultColChars = worksheet.properties?.defaultColWidth ?? DEFAULT_COLUMN_CHAR_WIDTH
+    const defaultRowPx = excelPointsToPx(defaultRowPt)
+    const defaultColPx = excelColumnWidthToPx(defaultColChars, mdw)
 
     const rowCount = worksheet.rowCount
     const colCount = worksheet.columnCount
@@ -64,7 +84,7 @@ async function readXlsx(file: File): Promise<WorkbookModel> {
 
     for (let r = 1; r <= rowCount; r++) {
       const row = worksheet.getRow(r)
-      rowHeights.push(excelPointsToPx(row.height ?? DEFAULT_ROW_HEIGHT_PT))
+      rowHeights.push(row.height === undefined ? defaultRowPx : excelPointsToPx(row.height))
       hiddenRows.push(Boolean(row.hidden))
 
       const rowCells: (CellModel | undefined)[] = []
@@ -83,8 +103,23 @@ async function readXlsx(file: File): Promise<WorkbookModel> {
     const hiddenCols: boolean[] = []
     for (let c = 1; c <= colCount; c++) {
       const col = worksheet.getColumn(c)
-      colWidths.push(excelColumnWidthToPx(col.width ?? DEFAULT_COLUMN_CHAR_WIDTH, mdw))
+      colWidths.push(col.width === undefined ? defaultColPx : excelColumnWidthToPx(col.width, mdw))
       hiddenCols.push(Boolean(col.hidden))
+    }
+
+    // 그림/도형이 데이터 영역 밖까지 걸쳐 있으면(셀은 0행인데 스크린샷만 있는 시트 등) 그리드가
+    // 그 영역을 빈 칸으로 이어서 그려야 하므로 시트 크기를 늘리고, 모자란 칸은 기본 크기로 채운다.
+    const drawing = drawingsBySheet.get(worksheet.name)
+    const extent = drawing
+      ? requiredExtent(drawing.items, buildAxis(colWidths, hiddenCols, defaultColPx), buildAxis(rowHeights, hiddenRows, defaultRowPx))
+      : { cols: 0, rows: 0 }
+    while (colWidths.length < extent.cols) {
+      colWidths.push(defaultColPx)
+      hiddenCols.push(false)
+    }
+    while (rowHeights.length < extent.rows) {
+      rowHeights.push(defaultRowPx)
+      hiddenRows.push(false)
     }
 
     // ExcelJS의 views 타입 선언(Array<Partial<WorksheetView>>)은 state로 좁혀도
@@ -97,8 +132,8 @@ async function readXlsx(file: File): Promise<WorkbookModel> {
 
     sheets.push({
       name: worksheet.name,
-      rowCount,
-      colCount,
+      rowCount: Math.max(rowCount, extent.rows),
+      colCount: Math.max(colCount, extent.cols),
       rows,
       merges,
       colWidths,
@@ -106,10 +141,12 @@ async function readXlsx(file: File): Promise<WorkbookModel> {
       hiddenCols,
       hiddenRows,
       frozen,
+      drawings: drawing?.items ?? [],
+      skippedDrawings: drawing?.skipped ?? {},
     })
   })
 
-  return { fileName: file.name, sheets }
+  return { fileName: file.name, sheets, warnings }
 }
 
 function cellToModel(cell: import('exceljs').Cell, theme: ThemeColors | null): CellModel {
@@ -161,8 +198,11 @@ async function readCsv(file: File): Promise<WorkbookModel> {
         hiddenCols: Array(colCount).fill(false),
         hiddenRows: Array(rowCount).fill(false),
         frozen: null,
+        drawings: [],
+        skippedDrawings: {},
       },
     ],
+    warnings: [],
   }
 }
 

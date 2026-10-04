@@ -16,6 +16,8 @@ const sheet: SheetModel = {
   hiddenCols: [],
   hiddenRows: [],
   frozen: null,
+  drawings: [],
+  skippedDrawings: {},
   rows: [
     [cell('Name'), cell('Amount')],
     [cell('a "quote"\ttab'), cell(100)],

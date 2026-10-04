@@ -8,11 +8,11 @@ function cell(value: string | number | null) {
 
 /** 테스트마다 안 바뀌는 레이아웃 필드(colWidths 등)는 기본값으로 채운다. */
 function sheet(partial: Pick<SheetModel, 'name' | 'rowCount' | 'colCount' | 'rows'>): SheetModel {
-  return { merges: [], colWidths: [], rowHeights: [], hiddenCols: [], hiddenRows: [], frozen: null, ...partial }
+  return { merges: [], colWidths: [], rowHeights: [], hiddenCols: [], hiddenRows: [], frozen: null, drawings: [], skippedDrawings: {}, ...partial }
 }
 
 function wb(sheets: WorkbookModel['sheets']): WorkbookModel {
-  return { fileName: 'x.xlsx', sheets }
+  return { fileName: 'x.xlsx', sheets, warnings: [] }
 }
 
 describe('diffWorkbooks', () => {

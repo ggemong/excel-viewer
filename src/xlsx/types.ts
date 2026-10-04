@@ -3,6 +3,7 @@
  * 이 프로젝트는 읽기 전용 뷰어라(D-006) 이 모델을 다시 파일로 쓰는 경로는 없다.
  */
 import type { CellStyle } from './cellStyle'
+import type { DrawingItem } from './drawingTypes'
 
 export type { CellStyle } from './cellStyle'
 
@@ -24,7 +25,10 @@ export interface SheetModel {
   name: string
   rowCount: number
   colCount: number
-  /** rows[rowIndex][colIndex], 0-based. 빈 셀은 undefined. */
+  /**
+   * rows[rowIndex][colIndex], 0-based. 빈 셀은 undefined. rows.length는 rowCount보다 짧을 수
+   * 있다 — 그림/도형만 걸쳐 있는 아래쪽 빈 영역은 데이터 행이 없다(읽는 쪽은 항상 `rows[r]?.`로 접근).
+   */
   rows: (CellModel | undefined)[][]
   merges: string[] // "B2:C3" 형태
   /** px, 0-based(colWidths[0] = A열). CSV는 전부 기본값. */
@@ -36,9 +40,21 @@ export interface SheetModel {
   hiddenRows: boolean[]
   /** 틀고정된 행 수(화면 최상단에 항상 보이는 행). 없으면 null. 열고정은 범위 밖(D-006 계획 참고). */
   frozen: { rows: number } | null
+  /** 시트 위에 떠 있는 그림·도형(src/xlsx/drawing.ts). 없으면 빈 배열. */
+  drawings: DrawingItem[]
+  /**
+   * 표시하지 못한 개체의 종류별 개수(예: { chart: 2 }) — 조용히 버리지 않고 UI가
+   * "표시하지 못한 개체가 있어요"로 알릴 수 있게 한다.
+   */
+  skippedDrawings: Record<string, number>
 }
 
 export interface WorkbookModel {
   fileName: string
   sheets: SheetModel[]
+  /**
+   * 파일은 열렸지만 일부(예: 특정 시트의 그림)를 읽지 못했을 때의 안내 문구. 셀 데이터까지
+   * 막는 치명적 오류와 구분해서 화면에 알림으로만 띄운다.
+   */
+  warnings: string[]
 }

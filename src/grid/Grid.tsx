@@ -3,9 +3,12 @@ import { useVirtualizer } from '@tanstack/react-virtual'
 import { normalizeRange, type CellRange } from '../clipboard/buildClipboardPayload'
 import { useClipboardCopy } from '../clipboard/useClipboardCopy'
 import type { SheetDiff } from '../diff/diffWorkbooks'
+import { DrawingLayer, type PlacedDrawing } from './DrawingLayer'
 import { isMergeMaster, useMergeLookup } from './useMergeLookup'
+import { useBlobUrls } from './useBlobUrls'
 import { cellAddress, columnLetter } from '../xlsx/cellRef'
 import { cellStyleProps } from '../xlsx/cellStyle'
+import { axisOffset, buildAxis, collectPictureBlobs, placeItem } from '../xlsx/drawingLayout'
 import { formatCellValue } from '../xlsx/formatValue'
 import type { SheetModel } from '../xlsx/types'
 
@@ -17,6 +20,11 @@ import type { SheetModel } from '../xlsx/types'
 const ROW_HEIGHT_FALLBACK = 34
 const HEADER_HEIGHT = 32
 const ROW_NUM_WIDTH = 44
+/**
+ * 그림 배치용 축에서 데이터 범위 밖 칸의 크기. read.ts가 그림이 걸친 영역까지 시트 크기를 미리
+ * 늘려 두므로(requiredExtent) 범위 밖 앵커는 생기지 않는다 — 혹시 생겨도 가장자리에 붙게 0으로 둔다.
+ */
+const OUT_OF_RANGE_CELL_SIZE = 0
 
 interface GridProps {
   sheet: SheetModel
@@ -103,6 +111,19 @@ export function Grid({ sheet, diff, onSelectionChange }: GridProps) {
     scrollableRowNumbers.forEach((r, i) => map.set(r, i))
     return map
   }, [scrollableRowNumbers])
+
+  // 그림/도형: 시트 좌표(숨긴 열/행은 폭 0)로 배치하고, 틀고정 영역 안에 완전히 들어가는 것은
+  // 고정 블록에, 나머지는 스크롤 본문에 올린다(틀고정 위에 그려진 그림이 같이 스크롤돼 어긋나지 않게).
+  const colAxis = useMemo(() => buildAxis(sheet.colWidths, sheet.hiddenCols, OUT_OF_RANGE_CELL_SIZE), [sheet.colWidths, sheet.hiddenCols])
+  const rowAxis = useMemo(() => buildAxis(sheet.rowHeights, sheet.hiddenRows, OUT_OF_RANGE_CELL_SIZE), [sheet.rowHeights, sheet.hiddenRows])
+  const frozenHeight = axisOffset(rowAxis, frozenRowCount)
+  const { frozenPlaced, scrollPlaced } = useMemo(() => {
+    const placed: PlacedDrawing[] = sheet.drawings.map((item) => ({ item, box: placeItem(item, colAxis, rowAxis) }))
+    const inFrozen = (p: PlacedDrawing) => frozenHeight > 0 && p.box.top + p.box.height <= frozenHeight + 1
+    return { frozenPlaced: placed.filter(inFrozen), scrollPlaced: placed.filter((p) => !inFrozen(p)) }
+  }, [sheet.drawings, colAxis, rowAxis, frozenHeight])
+  const pictureBlobs = useMemo(() => collectPictureBlobs(sheet.drawings), [sheet.drawings])
+  const urlFor = useBlobUrls(pictureBlobs)
 
   const gridTemplateColumns = `${ROW_NUM_WIDTH}px ${visibleColNumbers.map((c) => `${sheet.colWidths[c - 1]}px`).join(' ')}`
   const selection = useMemo(() => (anchor && focus ? normalizeRange(anchor, focus) : null), [anchor, focus])
@@ -373,10 +394,12 @@ export function Grid({ sheet, diff, onSelectionChange }: GridProps) {
         {frozenRowNumbers.length > 0 && (
           <div style={{ position: 'sticky', top: HEADER_HEIGHT, zIndex: 1 }}>
             {frozenRowNumbers.map((rowNum) => renderRow(rowNum, sheet.rowHeights[rowNum - 1] ?? ROW_HEIGHT_FALLBACK, {}))}
+            <DrawingLayer placed={frozenPlaced} offsetX={ROW_NUM_WIDTH} offsetY={0} urlFor={urlFor} />
           </div>
         )}
 
-        <div style={{ height: rowVirtualizer.getTotalSize(), position: 'relative' }}>
+        {/* zIndex 0: 이 컨테이너가 자기만의 쌓임 맥락이 되어, 본문 그림이 위로 스크롤될 때 틀고정 블록(zIndex 1) 아래로 들어가게 한다. */}
+        <div style={{ height: rowVirtualizer.getTotalSize(), position: 'relative', zIndex: 0 }}>
           {rowVirtualizer.getVirtualItems().map((virtualRow) => {
             const rowNum = scrollableRowNumbers[virtualRow.index]
             const rowHeight = sheet.rowHeights[rowNum - 1] ?? ROW_HEIGHT_FALLBACK
@@ -388,6 +411,7 @@ export function Grid({ sheet, diff, onSelectionChange }: GridProps) {
               transform: `translateY(${virtualRow.start}px)`,
             })
           })}
+          <DrawingLayer placed={scrollPlaced} offsetX={ROW_NUM_WIDTH} offsetY={frozenHeight} urlFor={urlFor} />
         </div>
       </div>
     </div>

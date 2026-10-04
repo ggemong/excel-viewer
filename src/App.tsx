@@ -2,6 +2,7 @@ import { useState } from 'react'
 import type { CellRange } from './clipboard/buildClipboardPayload'
 import { DropZone } from './grid/DropZone'
 import { Grid } from './grid/Grid'
+import { skippedDrawingNotice } from './grid/skippedDrawingNotice'
 import { SummaryBar } from './grid/SummaryBar'
 import { Toolbar } from './grid/Toolbar'
 import { useWorkbookController } from './state/useWorkbookController'
@@ -46,6 +47,11 @@ function App() {
               {compareError}
             </div>
           )}
+          {[...workbook.warnings, skippedDrawingNotice(activeSheet.skippedDrawings)].filter(Boolean).map((notice) => (
+            <div key={notice} className="notice-bar" role="status">
+              {notice}
+            </div>
+          ))}
           <Grid sheet={activeSheet} diff={activeSheetDiff} onSelectionChange={setSelection} />
           {workbook.sheets.length > 1 && (
             <div className="sheet-tabs">

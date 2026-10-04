@@ -35,6 +35,13 @@ const THEME_INDEX_ORDER = [
 export interface ThemeColors {
   /** theme 인덱스(0~11)로 바로 찾는 #RRGGBB 배열. 없는 슬롯은 빈 문자열. */
   slots: string[]
+  /**
+   * 테마의 선 스타일 목록(`a:lnStyleLst`)의 두께(EMU) — 도형이 `lnRef idx="2"`처럼 스타일
+   * 참조만으로 선을 그릴 때 idx번째(1부터) 두께가 필요하다. Office 버전마다 값이 달라서
+   * (2007: 9525/25400/38100, 2013+: 6350/12700/19050) 하드코딩하지 않고 파일에서 읽는다.
+   * 테마에 없으면 undefined.
+   */
+  lineWidthsEmu?: number[]
 }
 
 /** `<a:srgbClr val="RRGGBB"/>` 또는 `<a:sysClr val="..." lastClr="RRGGBB"/>`에서 색을 뽑는다. */
@@ -60,15 +67,19 @@ export function parseTheme(xml: string): ThemeColors | null {
     return readColorElement(el)
   })
 
-  return { slots }
+  const lineWidthsEmu = Array.from(doc.getElementsByTagName('a:lnStyleLst')[0]?.children ?? [])
+    .map((ln) => Number(ln.getAttribute('w')))
+    .filter((w) => Number.isFinite(w) && w > 0)
+
+  return lineWidthsEmu.length > 0 ? { slots, lineWidthsEmu } : { slots }
 }
 
-function hexToRgb(hex: string): [number, number, number] {
+export function hexToRgb(hex: string): [number, number, number] {
   const n = hex.replace('#', '')
   return [parseInt(n.slice(0, 2), 16), parseInt(n.slice(2, 4), 16), parseInt(n.slice(4, 6), 16)]
 }
 
-function rgbToHex(r: number, g: number, b: number): string {
+export function rgbToHex(r: number, g: number, b: number): string {
   const clamp = (v: number) => Math.max(0, Math.min(255, Math.round(v)))
   const hex = [r, g, b]
     .map(clamp)
@@ -77,7 +88,7 @@ function rgbToHex(r: number, g: number, b: number): string {
   return `#${hex}`.toUpperCase()
 }
 
-function rgbToHsl(r: number, g: number, b: number): [number, number, number] {
+export function rgbToHsl(r: number, g: number, b: number): [number, number, number] {
   const rn = r / 255
   const gn = g / 255
   const bn = b / 255
@@ -102,7 +113,7 @@ function rgbToHsl(r: number, g: number, b: number): [number, number, number] {
   return [h / 6, s, l]
 }
 
-function hslToRgb(h: number, s: number, l: number): [number, number, number] {
+export function hslToRgb(h: number, s: number, l: number): [number, number, number] {
   if (s === 0) {
     const v = l * 255
     return [v, v, v]
@@ -140,4 +151,19 @@ export function resolveThemeColor(theme: ThemeColors, index: number, tint?: numb
   const base = theme.slots[index]
   if (!base) return null
   return tint ? applyTint(base, tint) : base
+}
+
+/** DrawingML이 색을 이름으로 부를 때의 별칭 — bg1/tx1/bg2/tx2는 각각 lt1/dk1/lt2/dk2와 같은 슬롯이다. */
+const SCHEME_NAME_ALIASES: Record<string, string> = { bg1: 'lt1', tx1: 'dk1', bg2: 'lt2', tx2: 'dk2' }
+
+/**
+ * 도형/그림 XML의 `<a:schemeClr val="accent1"/>`처럼 **이름**으로 참조된 테마 색을 찾는다.
+ * (셀 서식은 인덱스, 도형은 이름으로 같은 팔레트를 가리킨다.) 모르는 이름이거나 슬롯이
+ * 비어있으면 null.
+ */
+export function resolveThemeColorByName(theme: ThemeColors, name: string): string | null {
+  const canonical = SCHEME_NAME_ALIASES[name] ?? name
+  const index = (THEME_INDEX_ORDER as readonly string[]).indexOf(canonical)
+  if (index < 0) return null
+  return theme.slots[index] || null
 }
