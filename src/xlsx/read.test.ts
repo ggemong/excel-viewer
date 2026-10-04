@@ -136,6 +136,18 @@ describe('readWorkbook (xlsx)', () => {
     expect((await readWorkbook(await toFile(wb))).sheets[0].filters).toEqual([])
   })
 
+  it('값이 있는 칸의 메모를 글자로 읽고, 메모 없는 칸에는 note가 없다', async () => {
+    const wb = new ExcelJS.Workbook()
+    const ws = wb.addWorksheet('S')
+    ws.getCell('A1').value = '값 있는 칸'
+    ws.getCell('A1').note = '이 칸 메모'
+    ws.getCell('B1').value = '메모 없는 칸'
+    const model = await readWorkbook(await toFile(wb))
+    const rows = model.sheets[0].rows
+    expect(rows[0][0]).toMatchObject({ value: '값 있는 칸', note: '이 칸 메모' })
+    expect(rows[0][1]?.note).toBeUndefined()
+  })
+
   it('한 시트의 그림 XML이 깨져도 다른 시트는 계속 읽고, 실패는 경고로 남긴다', async () => {
     const wb = new ExcelJS.Workbook()
     const id = wb.addImage({ buffer: PNG_1X1 as unknown as ExcelJS.Buffer, extension: 'png' })

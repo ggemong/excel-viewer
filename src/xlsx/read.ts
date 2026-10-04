@@ -1,6 +1,6 @@
 import { columnLetter } from './cellRef'
 import { extractCellStyle } from './cellStyle'
-import { interpretCellValue } from './cellValue'
+import { interpretCellValue, interpretNote } from './cellValue'
 import { excelColumnWidthToPx, excelPointsToPx, measureDefaultFontWidth } from './columnWidth'
 import { readWorkbookDrawings, type SheetDrawings } from './drawing'
 import { buildAxis, requiredExtent } from './drawingLayout'
@@ -107,11 +107,14 @@ async function readXlsx(file: File): Promise<WorkbookModel> {
       const rowCells: (CellModel | undefined)[] = []
       for (let c = 1; c <= colCount; c++) {
         const cell = row.getCell(c)
-        if (cell.type === undefined || cell.value === null || cell.value === undefined) {
+        // 값이 없어도 메모가 있는 칸이 오면 남긴다(메모 표시와 상세 보기에 필요). 다만 ExcelJS는 값 없는 칸의
+        // 메모를 쓰기/읽기 왕복에서 보존하지 않아서 이 경로를 시험으로는 확인하지 못했다.
+        const note = interpretNote(cell.note)
+        if ((cell.type === undefined || cell.value === null || cell.value === undefined) && !note) {
           rowCells.push(undefined)
           continue
         }
-        rowCells.push(cellToModel(cell, theme))
+        rowCells.push(cellToModel(cell, theme, note))
       }
       rows.push(rowCells)
     }
@@ -170,7 +173,7 @@ async function readXlsx(file: File): Promise<WorkbookModel> {
   return { fileName: file.name, sheets, warnings }
 }
 
-function cellToModel(cell: import('exceljs').Cell, theme: ThemeColors | null): CellModel {
+function cellToModel(cell: import('exceljs').Cell, theme: ThemeColors | null, note: string | undefined): CellModel {
   const { value, formula, hyperlink } = interpretCellValue(cell.value)
 
   return {
@@ -180,6 +183,7 @@ function cellToModel(cell: import('exceljs').Cell, theme: ThemeColors | null): C
     numFmt: cell.numFmt ?? null,
     style: extractCellStyle(cell, theme),
     hyperlink: hyperlink ? sanitizeHyperlink(hyperlink) : null,
+    ...(note ? { note } : {}),
   }
 }
 

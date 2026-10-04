@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CellRange } from './clipboard/buildClipboardPayload'
 import { DropZone } from './grid/DropZone'
+import { CellDetailBar } from './grid/CellDetailBar'
+import { describeCell } from './grid/cellDetail'
 import { FilterMenu } from './grid/FilterMenu'
 import { FilterStatusBar } from './grid/FilterStatusBar'
 import { Grid, type GridFocusRequest } from './grid/Grid'
@@ -35,6 +37,8 @@ function App() {
     activeSheetDiff,
   } = useWorkbookController()
   const [selection, setSelection] = useState<CellRange | null>(null)
+  // 셀 내용 줄의 펼침 상태 — 칸을 옮겨도 유지한다(여러 칸을 연달아 읽을 때 매번 펼치지 않게).
+  const [detailExpanded, setDetailExpanded] = useState(false)
   const filters = useViewFilters(workbook, activeSheet)
   // 열린 필터 메뉴: 어느 시트의 어느 열이고 ▼ 버튼이 화면 어디에 있는지. 시트가 바뀌면 자연히 무효가 된다.
   const [filterMenu, setFilterMenu] = useState<{
@@ -107,6 +111,11 @@ function App() {
     return () => document.removeEventListener('keydown', onKeyDown)
   }, [workbook, searchOpen, searchGo, setSearchOpen, openSearch, filterMenuOpen])
 
+  const cellDetail = useMemo(
+    () => (activeSheet && selection ? describeCell(activeSheet, selection.r0, selection.c0) : null),
+    [activeSheet, selection],
+  )
+
   const searchHighlights = useMemo(() => (searchOpen ? highlightsFor(search.hits, activeSheetIndex) : null), [searchOpen, search.hits, activeSheetIndex])
   const currentHit = searchOpen ? search.currentHit : null
   const onActiveSheet = currentHit !== null && currentHit.sheetIndex === activeSheetIndex
@@ -162,6 +171,7 @@ function App() {
               onResetToFile={filters.resetToFile}
             />
           )}
+          {cellDetail && <CellDetailBar detail={cellDetail} expanded={detailExpanded} onToggleExpanded={() => setDetailExpanded((v) => !v)} />}
           <Grid
             key={activeSheet.name}
             sheet={filters.viewSheet ?? activeSheet}

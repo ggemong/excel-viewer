@@ -76,3 +76,17 @@ export function interpretCellValue(raw: unknown): InterpretedCell {
 
   return { value: scalar(raw), formula: null, hyperlink: null }
 }
+
+/**
+ * ExcelJS의 셀 메모(`cell.note`)를 글자 하나로 만든다. 메모는 문자열로 오거나, 실제 파일에서는
+ * `{ texts: [{ font, text }, ...] }` 처럼 서식 조각 배열로 온다(굵게/색 조각마다 한 항목). 서식은
+ * 화면에 쓰지 않으므로 글자만 이어 붙인다. 글자가 하나도 없으면 undefined.
+ */
+export function interpretNote(raw: unknown): string | undefined {
+  if (typeof raw === 'string') return raw.trim() === '' ? undefined : raw
+  if (raw && typeof raw === 'object' && Array.isArray((raw as { texts?: unknown }).texts)) {
+    const text = ((raw as { texts: { text?: string }[] }).texts).map((t) => t.text ?? '').join('')
+    return text.trim() === '' ? undefined : text
+  }
+  return undefined
+}

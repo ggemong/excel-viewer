@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { dateToSerial, interpretCellValue, UNSUPPORTED_VALUE } from './cellValue'
+import { dateToSerial, interpretCellValue, interpretNote, UNSUPPORTED_VALUE } from './cellValue'
 
 describe('interpretCellValue', () => {
   it('숫자/문자/불리언/빈값은 그대로', () => {
@@ -49,5 +49,20 @@ describe('interpretCellValue', () => {
   it('알 수 없는 모양은 [object Object] 대신 눈에 띄는 표식으로', () => {
     expect(interpretCellValue({ something: 1 }).value).toBe(UNSUPPORTED_VALUE)
     expect(interpretCellValue({ formula: 'X', result: { weird: true } }).value).toBe(UNSUPPORTED_VALUE)
+  })
+})
+
+describe('interpretNote', () => {
+  it('문자열 메모는 그대로', () => {
+    expect(interpretNote('확인 필요')).toBe('확인 필요')
+  })
+  it('서식 조각 배열({texts})은 글자만 이어 붙인다 — 실제 파일에서 오는 모양', () => {
+    expect(interpretNote({ texts: [{ font: {}, text: '굵게 ' }, { font: {}, text: '그리고 보통' }] })).toBe('굵게 그리고 보통')
+  })
+  it('글자가 없거나 모르는 모양이면 undefined', () => {
+    expect(interpretNote('   ')).toBeUndefined()
+    expect(interpretNote({ texts: [{ text: '' }] })).toBeUndefined()
+    expect(interpretNote(undefined)).toBeUndefined()
+    expect(interpretNote({ weird: true })).toBeUndefined()
   })
 })

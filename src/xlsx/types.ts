@@ -20,6 +20,8 @@ export interface CellModel {
    * null — src/xlsx/read.ts의 cellToModel 참고). CSV는 항상 null.
    */
   hyperlink: string | null
+  /** 셀 메모(주석) 글자. 메모가 없으면 undefined. 서식은 버리고 글자만 이어 붙인다. */
+  note?: string
 }
 
 export interface SheetModel {

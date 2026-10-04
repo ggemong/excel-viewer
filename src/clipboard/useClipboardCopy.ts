@@ -13,6 +13,25 @@ const COPIED_FLASH_MS = 1500
 export function useClipboardCopy() {
   const [copied, setCopied] = useState(false)
 
+  const flashCopied = useCallback(() => {
+    setCopied(true)
+    setTimeout(() => setCopied(false), COPIED_FLASH_MS)
+  }, [])
+
+  /** 서식 없는 글자 그대로 복사(셀 상세 줄용). 셀 범위 복사(copyRange)와 달리 탭/따옴표 이스케이프를 하지 않는다. */
+  const copyText = useCallback(
+    async (text: string) => {
+      try {
+        await navigator.clipboard.writeText(text)
+        flashCopied()
+        return true
+      } catch {
+        return false
+      }
+    },
+    [flashCopied],
+  )
+
   const copyRange = useCallback(async (sheet: SheetModel, range: CellRange, skipRows?: boolean[]) => {
     const tsv = buildTsv(sheet, range, skipRows)
     const html = buildHtmlTable(sheet, range, skipRows)
@@ -28,13 +47,12 @@ export function useClipboardCopy() {
       } else {
         await navigator.clipboard.writeText(tsv)
       }
-      setCopied(true)
-      setTimeout(() => setCopied(false), COPIED_FLASH_MS)
+      flashCopied()
       return true
     } catch {
       return false
     }
-  }, [])
+  }, [flashCopied])
 
-  return { copyRange, copied }
+  return { copyRange, copyText, copied }
 }

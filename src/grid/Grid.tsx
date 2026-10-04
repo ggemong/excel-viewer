@@ -379,7 +379,8 @@ export function Grid({ sheet, diff, onSelectionChange, activeFilterCols, onFilte
                 data-selected={inRange(selection, rowNum, col)}
                 data-search={searchState}
                 data-diff={cellDiff && cellDiff.status !== 'unchanged' ? cellDiff.status : undefined}
-                title={diffTitle ?? (filterState === 'active' ? '이 열에 필터 조건이 걸려 있어요' : undefined)}
+                title={diffTitle ?? (filterState === 'active' ? '이 열에 필터 조건이 걸려 있어요' : undefined) ?? cell?.note}
+                data-note={cell?.note ? 'true' : undefined}
                 style={{
                   justifyContent: isNumeric ? 'flex-end' : 'flex-start',
                   gridColumn: colSpan > 1 ? `span ${colSpan}` : undefined,
