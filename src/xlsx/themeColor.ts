@@ -1,8 +1,8 @@
 /**
  * 엑셀 테마 색상(`xl/theme/theme1.xml`) 해석. ExcelJS는 이 파일을 공식적으로
- * 지원하지 않고(소스 코드 자체 주석: "themes are not an exposed feature, meddle
- * at your peril!") `workbook.model.themes.theme1`에 원본 XML 문자열만 담아
- * 넘겨준다 — 그래서 여기서 `DOMParser`로 직접 파싱한다.
+ * 지원하지 않는다(소스 코드 자체 주석: "themes are not an exposed feature, meddle
+ * at your peril!"). 원본 XML은 ZIP에서 직접 꺼내고(workbookParts.readThemeXml),
+ * 여기서 `DOMParser`로 파싱한다.
  *
  * 왜 필요한가: 셀 서식의 색상은 직접 RGB(`argb`)가 아니라 테마 인덱스(`theme`)로
  * 지정되는 경우가 훨씬 흔하다 — Excel "채우기 색" 팔레트 맨 윗줄이 전부 테마
@@ -54,7 +54,7 @@ function readColorElement(parent: Element | null): string {
   return ''
 }
 
-/** `workbook.model.themes.theme1` 원본 XML 문자열을 파싱한다. 파싱 실패/구조가 다르면 null. */
+/** 테마 원본 XML 문자열을 파싱한다. 파싱 실패/구조가 다르면 null. */
 export function parseTheme(xml: string): ThemeColors | null {
   const doc = new DOMParser().parseFromString(xml, 'application/xml')
   if (doc.getElementsByTagName('parsererror')[0]) return null

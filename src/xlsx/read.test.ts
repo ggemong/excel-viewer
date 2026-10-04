@@ -3,7 +3,7 @@ import JSZip from 'jszip'
 import { describe, expect, it } from 'vitest'
 import { readWorkbookDrawings } from './drawing'
 import type { PictureNode, ShapeNode } from './drawingTypes'
-import { readWorkbook } from './read'
+import { EXCELJS_IGNORED_NODES, mergeRangesOf, readWorkbook } from './read'
 import { ZipArchive } from './zipReader'
 
 /** 1x1 투명 PNG */
@@ -164,5 +164,78 @@ describe('readWorkbook (xlsx)', () => {
     expect(bySheet.has('깨짐')).toBe(false)
     expect(warnings).toHaveLength(1)
     expect(warnings[0]).toContain('깨짐')
+  })
+})
+
+describe('데이터 유효성 검사 건너뛰기', () => {
+  // ExcelJS의 타입 선언에는 dataValidations가 빠져 있다(런타임에는 있다).
+  const validationsOf = (ws: ExcelJS.Worksheet) => (ws as unknown as { dataValidations: { add(address: string, rule: unknown): void; model: Record<string, unknown> } }).dataValidations
+
+  /** 열 전체에 드롭다운이 걸린 시트 — ExcelJS가 읽을 때 100만 칸으로 펼치는 실제 파일의 모양. */
+  async function wholeColumnValidationBuffer(): Promise<ArrayBuffer> {
+    const wb = new ExcelJS.Workbook()
+    const ws = wb.addWorksheet('S')
+    ws.getCell('A1').value = '보임'
+    validationsOf(ws).add('B4:B1048576', { type: 'list', allowBlank: true, formulae: ['"가,나"'] })
+    const out = new Uint8Array((await wb.xlsx.writeBuffer()) as ArrayBuffer)
+    return out.buffer.slice(out.byteOffset, out.byteOffset + out.byteLength) as ArrayBuffer
+  }
+
+  it('옵션을 주면 유효성 규칙을 펼치지 않는다(옵션이 실제로 먹는지 — 안 주면 펼쳐진다는 전제도 함께 확인)', async () => {
+    const buffer = await wholeColumnValidationBuffer()
+
+    const skipped = new ExcelJS.Workbook()
+    await skipped.xlsx.load(buffer.slice(0), { ignoreNodes: EXCELJS_IGNORED_NODES })
+    expect(Object.keys(validationsOf(skipped.getWorksheet('S')!).model)).toHaveLength(0)
+
+    const expanded = new ExcelJS.Workbook()
+    await expanded.xlsx.load(buffer.slice(0))
+    expect(Object.keys(validationsOf(expanded.getWorksheet('S')!).model).length).toBeGreaterThan(1000)
+  })
+
+  it('건너뛰어도 칸 값은 그대로 읽힌다', async () => {
+    const buffer = await wholeColumnValidationBuffer()
+    const file = new File([buffer], 'v.xlsx')
+    if (typeof file.arrayBuffer !== 'function') (file as unknown as { arrayBuffer: () => Promise<ArrayBuffer> }).arrayBuffer = async () => buffer
+    const model = await readWorkbook(file)
+    expect(model.sheets[0].rows[0][0]?.value).toBe('보임')
+  })
+})
+
+describe('테마 색', () => {
+  it('ZIP의 테마 파일에서 읽어 테마 색 채우기를 실제 색으로 해석한다', async () => {
+    const wb = new ExcelJS.Workbook()
+    const ws = wb.addWorksheet('S')
+    ws.getCell('A1').value = '강조색'
+    // theme 4 = accent1. ExcelJS가 쓰는 기본 Office 테마의 accent1은 4F81BD
+    ws.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { theme: 4 } }
+    const model = await readWorkbook(await toFile(wb))
+    expect(model.sheets[0].rows[0][0]?.style?.bg?.toLowerCase()).toBe('#4f81bd')
+    expect(model.warnings).toEqual([])
+  })
+})
+
+describe('mergeRangesOf', () => {
+  it('ExcelJS가 model로 주는 병합 범위와 같은 값을 돌려준다(느린 getter를 피하는 지름길이 어긋나지 않았는지)', async () => {
+    const wb = new ExcelJS.Workbook()
+    const ws = wb.addWorksheet('S')
+    ws.getCell('B2').value = '제목'
+    ws.mergeCells('B2:C3')
+    ws.mergeCells('E5:F5')
+    const loaded = new ExcelJS.Workbook()
+    await loaded.xlsx.load((await wb.xlsx.writeBuffer()) as ArrayBuffer)
+    const sheet = loaded.getWorksheet('S')!
+    expect(mergeRangesOf(sheet).sort()).toEqual(['B2:C3', 'E5:F5'])
+    expect(mergeRangesOf(sheet).sort()).toEqual([...(sheet.model.merges ?? [])].sort())
+  })
+
+  it('병합이 없으면 빈 목록', () => {
+    const ws = new ExcelJS.Workbook().addWorksheet('S')
+    expect(mergeRangesOf(ws)).toEqual([])
+  })
+
+  it('내부 구조를 못 읽으면 model로 되돌아간다', () => {
+    const fake = { model: { merges: ['A1:B1'] } } as unknown as ExcelJS.Worksheet
+    expect(mergeRangesOf(fake)).toEqual(['A1:B1'])
   })
 })

@@ -10,7 +10,7 @@ import { autoFilterRangeText, buildSheetFilter, readAutoFilterDetails, type Auto
 import { readCustomHeightRows } from './rowHeights'
 import { parseTheme, type ThemeColors } from './themeColor'
 import type { CellModel, SheetModel, WorkbookModel } from './types'
-import { listSheetParts } from './workbookParts'
+import { listSheetParts, readThemeXml } from './workbookParts'
 import { ZipArchive } from './zipReader'
 
 // 파일이 기본 열너비/행높이(sheetFormatPr)조차 안 적었을 때만 쓰는 Excel 통상 기본값.
@@ -18,6 +18,14 @@ import { ZipArchive } from './zipReader'
 // 쓰지 않고 15pt/8.43으로 고정하면 명시 안 된 모든 행/열이 어긋난다.
 const DEFAULT_COLUMN_CHAR_WIDTH = 8.43
 const DEFAULT_ROW_HEIGHT_PT = 15
+
+/**
+ * ExcelJS가 읽을 때 건너뛸 XML 노드. 데이터 유효성 검사(드롭다운 목록 등)는 읽기 전용 뷰어가 쓰지 않는데, ExcelJS는
+ * 그 적용 범위를 칸 하나하나로 펼쳐 저장한다. 열 전체(`L4:L1048576`)에 걸린 규칙이 있으면 시트 하나가 100만 칸이 된다 —
+ * 실제 업무 파일(칸 4천 개, 시트 59개)에서 열기가 6.2초·메모리 450MB·화면 멈춤 3.7초였고 이것을 건너뛰면 2.6초·130MB·0.05초가
+ * 됐다(운영 빌드에서 실측). 이 값을 늘릴 때는 "우리가 쓰지 않는 노드인가"를 먼저 확인한다.
+ */
+export const EXCELJS_IGNORED_NODES = ['dataValidations']
 
 /** 사용자가 올린 임의 파일을 그대로 열어주는 뷰어라, 하이퍼링크는 이 스킴만 신뢰한다 —
  * javascript:/file: 같은 스킴으로 된 악성 링크가 그대로 클릭 가능한 <a>가 되는 걸 막는다. */
@@ -48,14 +56,7 @@ async function readXlsx(file: File): Promise<WorkbookModel> {
   const ExcelJS = await import('exceljs')
   const buffer = await file.arrayBuffer()
   const workbook = new ExcelJS.Workbook()
-  await workbook.xlsx.load(buffer)
-
-  // 테마는 워크북 하나당 한 번만 파싱한다(셀마다 다시 파싱하지 않음) — ExcelJS는
-  // 공식 지원은 안 하지만 원본 XML 문자열은 model.themes.theme1에 그대로 들어있다.
-  // (ExcelJS의 타입 선언은 themes를 string[]로 잘못 적어뒀다 — 실제로는 테마 이름을
-  // 키로 쓰는 객체라 unknown을 거쳐 캐스팅한다.)
-  const themeXml = (workbook.model as unknown as { themes?: Record<string, string> }).themes?.theme1
-  const theme = themeXml ? parseTheme(themeXml) : null
+  await workbook.xlsx.load(buffer, { ignoreNodes: EXCELJS_IGNORED_NODES })
 
   const mdw = measureDefaultFontWidth()
 
@@ -76,9 +77,17 @@ async function readXlsx(file: File): Promise<WorkbookModel> {
   try {
     zip = ZipArchive.open(buffer)
   } catch (err) {
-    warnings.push(`파일 구조를 읽지 못해 그림/도형·필터 조건·글자 크기를 반영하지 못했어요: ${describe(err)}`)
+    warnings.push(`파일 구조를 읽지 못해 그림/도형·필터 조건·글자 크기·테마 색을 반영하지 못했어요: ${describe(err)}`)
   }
+  // 테마는 워크북 하나당 한 번만 파싱한다(셀마다 다시 파싱하지 않음). 테마 색을 모르면 테마 색을 쓰는 칸의 색이 빠진다.
+  let theme: ThemeColors | null = null
   if (zip) {
+    try {
+      const themeXml = await readThemeXml(zip)
+      theme = themeXml ? parseTheme(themeXml) : null
+    } catch (err) {
+      warnings.push(`테마 색을 읽지 못해 일부 색이 다르게 보일 수 있어요: ${describe(err)}`)
+    }
     try {
       defaultFontPt = await readDefaultFontPt(zip)
     } catch (err) {
@@ -187,7 +196,7 @@ async function readXlsx(file: File): Promise<WorkbookModel> {
     const frozenView = worksheet.views?.find((v) => v.state === 'frozen') as { ySplit?: number } | undefined
     const frozen = frozenView?.ySplit ? { rows: frozenView.ySplit } : null
 
-    const merges = worksheet.model.merges ?? []
+    const merges = mergeRangesOf(worksheet)
 
     const conditional = extractConditionalFormats(
       // ExcelJS의 타입 선언에는 이 속성이 빠져 있다(런타임에는 있다).
@@ -219,6 +228,20 @@ async function readXlsx(file: File): Promise<WorkbookModel> {
   }
 
   return { fileName: file.name, sheets, warnings }
+}
+
+/**
+ * 시트의 병합 범위("B2:C3" 목록). ExcelJS의 `worksheet.model.merges`와 같은 값이지만, 그 getter는 시트의 모든 칸을 모델로
+ * 새로 만들어서 시트 59개에 0.64초가 들었다(운영 빌드 실측, 실제 칸 순회는 30ms). ExcelJS가 내부에 쥔 병합 목록(`_merges`)을
+ * 바로 읽는다. ExcelJS를 올려서 이 내부 구조가 바뀌면 조용히 병합을 놓치지 않고, 느려도 정확한 model로 되돌아간다.
+ */
+export function mergeRangesOf(worksheet: import('exceljs').Worksheet): string[] {
+  const internal = (worksheet as unknown as { _merges?: Record<string, { range?: unknown }> })._merges
+  if (internal && typeof internal === 'object') {
+    const ranges = Object.values(internal).map((merge) => merge.range)
+    if (ranges.every((range): range is string => typeof range === 'string')) return ranges
+  }
+  return worksheet.model.merges ?? []
 }
 
 function cellToModel(cell: import('exceljs').Cell, theme: ThemeColors | null, note: string | undefined, defaultFontPt: number | null): CellModel {

@@ -57,6 +57,20 @@ export async function readRelationships(zip: ZipArchive, partPath: string): Prom
 }
 
 
+/**
+ * 통합문서 테마(xl/theme/theme1.xml 등)의 XML 원문. 없으면 null.
+ *
+ * 왜 ExcelJS의 `workbook.model.themes`를 안 쓰나: `workbook.model`은 읽을 때마다 모든 시트의 모델을 통째로 새로
+ * 만드는 getter라서, 테마 한 줄을 얻으려고 불러도 실제 파일(59시트)에서 메인 화면을 1.4초 멈췄다(운영 빌드 실측).
+ */
+export async function readThemeXml(zip: ZipArchive): Promise<string | null> {
+  const rels = await readRelationships(zip, 'xl/workbook.xml')
+  for (const rel of rels.values()) {
+    if (rel.type.endsWith('/theme')) return zip.readText(resolveZipPath('xl', rel.target))
+  }
+  return null
+}
+
 /** workbook.xml 순서대로 (시트 이름, 시트 XML 경로) 목록. 숨김 시트도 포함한다(걸러내는 건 호출부 몫). */
 export async function listSheetParts(zip: ZipArchive): Promise<SheetPart[]> {
   const workbookXml = await zip.readText('xl/workbook.xml')
