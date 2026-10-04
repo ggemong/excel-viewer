@@ -1,5 +1,6 @@
 import { columnLetter } from './cellRef'
 import { extractCellStyle } from './cellStyle'
+import { interpretCellValue } from './cellValue'
 import { excelColumnWidthToPx, excelPointsToPx, measureDefaultFontWidth } from './columnWidth'
 import { parseTheme, type ThemeColors } from './themeColor'
 import type { CellModel, SheetModel, WorkbookModel } from './types'
@@ -52,6 +53,9 @@ async function readXlsx(file: File): Promise<WorkbookModel> {
 
   const sheets: SheetModel[] = []
   workbook.eachSheet((worksheet) => {
+    // 숨김/완전숨김 시트는 Excel도 탭에 안 보여준다(Excel의 "숨기기" 의도 존중).
+    if (worksheet.state !== 'visible') return
+
     const rowCount = worksheet.rowCount
     const colCount = worksheet.columnCount
     const rows: (CellModel | undefined)[][] = []
@@ -109,27 +113,7 @@ async function readXlsx(file: File): Promise<WorkbookModel> {
 }
 
 function cellToModel(cell: import('exceljs').Cell, theme: ThemeColors | null): CellModel {
-  let formula: string | null = null
-  let value: CellModel['value'] = null
-  let hyperlink: string | null = null
-
-  const raw = cell.value as unknown
-  if (raw && typeof raw === 'object' && 'formula' in (raw as Record<string, unknown>)) {
-    const f = raw as { formula?: string; result?: unknown }
-    formula = f.formula ?? null
-    value = normalizeValue(f.result)
-  } else if (raw && typeof raw === 'object' && 'richText' in (raw as Record<string, unknown>)) {
-    const rt = raw as { richText: { text: string }[] }
-    value = rt.richText.map((t) => t.text).join('')
-  } else if (raw && typeof raw === 'object' && 'hyperlink' in (raw as Record<string, unknown>)) {
-    // 외부(관계 ID 기반) 링크만 이 모양으로 온다 — 같은 통합문서 안 다른 시트/셀로
-    // 가는 내부 링크는 ExcelJS가 애초에 이 모양으로 안 올려준다(알려진 한계).
-    const h = raw as { text?: unknown; hyperlink?: string }
-    value = normalizeValue(h.text)
-    hyperlink = h.hyperlink ? sanitizeHyperlink(h.hyperlink) : null
-  } else {
-    value = normalizeValue(raw)
-  }
+  const { value, formula, hyperlink } = interpretCellValue(cell.value)
 
   return {
     address: cell.address,
@@ -137,15 +121,8 @@ function cellToModel(cell: import('exceljs').Cell, theme: ThemeColors | null): C
     formula,
     numFmt: cell.numFmt ?? null,
     style: extractCellStyle(cell, theme),
-    hyperlink,
+    hyperlink: hyperlink ? sanitizeHyperlink(hyperlink) : null,
   }
-}
-
-function normalizeValue(raw: unknown): CellModel['value'] {
-  if (raw === null || raw === undefined) return null
-  if (raw instanceof Date) return raw.toISOString()
-  if (typeof raw === 'string' || typeof raw === 'number' || typeof raw === 'boolean') return raw
-  return String(raw)
 }
 
 async function readCsv(file: File): Promise<WorkbookModel> {
