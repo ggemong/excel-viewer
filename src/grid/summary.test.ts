@@ -16,6 +16,7 @@ const sheet: SheetModel = {
   hiddenCols: [],
   hiddenRows: [],
   frozen: null,
+  filters: [],
   drawings: [],
   skippedDrawings: {},
   rows: [

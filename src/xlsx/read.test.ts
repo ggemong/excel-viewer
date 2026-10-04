@@ -111,6 +111,31 @@ describe('readWorkbook (xlsx)', () => {
     expect(shape.fill).toBe('#C00000')
   })
 
+  it('자동 필터: 범위와, ExcelJS가 버리는 조건이 걸린 열을 읽는다', async () => {
+    const wb = new ExcelJS.Workbook()
+    const ws = wb.addWorksheet('S')
+    for (let r = 1; r <= 5; r++) {
+      ws.getCell(r, 1).value = r % 2 ? 'A' : 'B'
+      ws.getCell(r, 2).value = r
+    }
+    ws.autoFilter = 'A1:C5'
+    const model = await readWorkbook(
+      await toFile(wb, async (zip) => {
+        const path = 'xl/worksheets/sheet1.xml'
+        const xml = await zip.file(path)!.async('string')
+        // 2번째 열(colId=1)에만 조건이 걸린 상태를 Excel이 저장하는 모양 그대로
+        zip.file(path, xml.replace('<autoFilter ref="A1:C5"/>', '<autoFilter ref="A1:C5"><filterColumn colId="1"><filters><filter val="1"/></filters></filterColumn></autoFilter>'))
+      }),
+    )
+    expect(model.sheets[0].filters).toEqual([{ headerRow: 1, firstCol: 1, lastCol: 3, activeCols: [2], hiddenButtonCols: [] }])
+  })
+
+  it('자동 필터가 없는 시트는 filters가 비어 있다', async () => {
+    const wb = new ExcelJS.Workbook()
+    wb.addWorksheet('S').getCell('A1').value = 1
+    expect((await readWorkbook(await toFile(wb))).sheets[0].filters).toEqual([])
+  })
+
   it('한 시트의 그림 XML이 깨져도 다른 시트는 계속 읽고, 실패는 경고로 남긴다', async () => {
     const wb = new ExcelJS.Workbook()
     const id = wb.addImage({ buffer: PNG_1X1 as unknown as ExcelJS.Buffer, extension: 'png' })

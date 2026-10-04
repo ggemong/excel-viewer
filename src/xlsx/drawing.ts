@@ -28,6 +28,7 @@ import type {
   TextRun,
 } from './drawingTypes'
 import type { ThemeColors } from './themeColor'
+import { dirname, listSheetParts, R_NS, readRelationships, resolveZipPath } from './workbookParts'
 import type { ZipArchive } from './zipReader'
 
 const EMU_PER_PX = 9525
@@ -39,7 +40,6 @@ const DEFAULT_FONT_PT = 11
 const DEFAULT_INSET_EMU = { l: 91440, t: 45720, r: 91440, b: 45720 }
 /** 테마에 선 두께 목록이 없을 때 쓰는 Office 2007~2010 기본값(EMU) — lnRef idx 1,2,3. */
 const FALLBACK_LINE_WIDTHS_EMU = [9525, 25400, 38100]
-const R_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
 const IMAGE_MIME: Record<string, string> = {
   png: 'image/png',
   jpg: 'image/jpeg',
@@ -383,49 +383,6 @@ export function parseDrawingXml(xml: string, ctx: DrawingParseContext): SheetDra
 
 // ---------- 공개: 통합문서 전체에서 시트별 그림/도형 읽기 ----------
 
-interface Relationship {
-  type: string
-  target: string
-}
-
-/** `baseDir`(예: xl/worksheets) 기준 상대 경로 target을 ZIP 내부 절대 경로로. */
-function resolveZipPath(baseDir: string, target: string): string {
-  if (target.startsWith('/')) return target.slice(1)
-  const parts = baseDir ? baseDir.split('/') : []
-  for (const seg of target.split('/')) {
-    if (seg === '..') parts.pop()
-    else if (seg !== '.' && seg !== '') parts.push(seg)
-  }
-  return parts.join('/')
-}
-
-function dirname(path: string): string {
-  const i = path.lastIndexOf('/')
-  return i < 0 ? '' : path.slice(0, i)
-}
-
-function basename(path: string): string {
-  return path.slice(path.lastIndexOf('/') + 1)
-}
-
-function parseXml(xml: string): Document {
-  const doc = new DOMParser().parseFromString(xml, 'application/xml')
-  if (doc.getElementsByTagName('parsererror')[0]) throw new Error('XML을 해석하지 못했어요')
-  return doc
-}
-
-async function readRelationships(zip: ZipArchive, partPath: string): Promise<Map<string, Relationship>> {
-  const relsPath = `${dirname(partPath)}/_rels/${basename(partPath)}.rels`
-  const xml = await zip.readText(relsPath)
-  const out = new Map<string, Relationship>()
-  if (!xml) return out
-  for (const rel of Array.from(parseXml(xml).getElementsByTagName('Relationship'))) {
-    const id = rel.getAttribute('Id')
-    if (id) out.set(id, { type: rel.getAttribute('Type') ?? '', target: rel.getAttribute('Target') ?? '' })
-  }
-  return out
-}
-
 async function loadMedia(zip: ZipArchive, path: string, cache: Map<string, Promise<MediaEntry>>): Promise<MediaEntry> {
   const hit = cache.get(path)
   if (hit) return hit
@@ -454,19 +411,10 @@ export async function readWorkbookDrawings(
   const bySheet = new Map<string, SheetDrawings>()
   const warnings: string[] = []
 
-  const workbookXml = await zip.readText('xl/workbook.xml')
-  if (!workbookXml) return { bySheet, warnings }
-  const workbookRels = await readRelationships(zip, 'xl/workbook.xml')
   const mediaCache = new Map<string, Promise<MediaEntry>>()
 
-  for (const sheetEl of Array.from(parseXml(workbookXml).getElementsByTagName('sheet'))) {
-    const name = sheetEl.getAttribute('name') ?? ''
-    const rId = sheetEl.getAttributeNS(R_NS, 'id') ?? sheetEl.getAttribute('r:id')
-    const sheetTarget = rId ? workbookRels.get(rId)?.target : undefined
-    if (!name || !sheetTarget) continue
-
+  for (const { name, path: sheetPath } of await listSheetParts(zip)) {
     try {
-      const sheetPath = resolveZipPath('xl', sheetTarget)
       const sheetRels = await readRelationships(zip, sheetPath)
       const drawingRel = [...sheetRels.values()].find((r) => r.type.endsWith('/drawing'))
       if (!drawingRel) continue

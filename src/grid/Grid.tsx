@@ -122,6 +122,18 @@ export function Grid({ sheet, diff, onSelectionChange }: GridProps) {
     const inFrozen = (p: PlacedDrawing) => frozenHeight > 0 && p.box.top + p.box.height <= frozenHeight + 1
     return { frozenPlaced: placed.filter(inFrozen), scrollPlaced: placed.filter((p) => !inFrozen(p)) }
   }, [sheet.drawings, colAxis, rowAxis, frozenHeight])
+  // 자동 필터 버튼이 달릴 칸 -> 조건이 걸려 필터링 중인지. 버튼만 표시하는 용도(보기 전용)이고, 필터로
+  // 숨겨진 행은 파일에 hidden으로 이미 저장돼 있어서 별도 계산 없이 숨김 행으로 처리된다.
+  const filterButtons = useMemo(() => {
+    const map = new Map<string, 'idle' | 'active'>()
+    for (const f of sheet.filters) {
+      for (let col = f.firstCol; col <= f.lastCol; col++) {
+        if (f.hiddenButtonCols.includes(col)) continue
+        map.set(`${f.headerRow},${col}`, f.activeCols.includes(col) ? 'active' : 'idle')
+      }
+    }
+    return map
+  }, [sheet.filters])
   const pictureBlobs = useMemo(() => collectPictureBlobs(sheet.drawings), [sheet.drawings])
   const urlFor = useBlobUrls(pictureBlobs)
 
@@ -280,6 +292,7 @@ export function Grid({ sheet, diff, onSelectionChange }: GridProps) {
             }
 
             const colIndex = col - 1
+            const filterState = filterButtons.get(`${rowNum},${col}`)
             const cell = row?.[colIndex]
             const isNumeric = typeof cell?.value === 'number'
             const cellDiff = diff?.cells[rowNum - 1]?.[colIndex]
@@ -293,10 +306,10 @@ export function Grid({ sheet, diff, onSelectionChange }: GridProps) {
             cells.push(
               <div
                 key={col}
-                className="grid-cell"
+                className={filterState ? 'grid-cell grid-cell--filter' : 'grid-cell'}
                 data-selected={inRange(selection, rowNum, col)}
                 data-diff={cellDiff && cellDiff.status !== 'unchanged' ? cellDiff.status : undefined}
-                title={diffTitle}
+                title={diffTitle ?? (filterState === 'active' ? '이 열에 필터 조건이 걸려 있어요' : undefined)}
                 style={{
                   justifyContent: isNumeric ? 'flex-end' : 'flex-start',
                   gridColumn: colSpan > 1 ? `span ${colSpan}` : undefined,
@@ -319,6 +332,7 @@ export function Grid({ sheet, diff, onSelectionChange }: GridProps) {
                 ) : (
                   formatCellValue(cell)
                 )}
+                {filterState && <span className="grid-filter-btn" data-active={filterState === 'active'} aria-hidden="true" />}
               </div>,
             )
 

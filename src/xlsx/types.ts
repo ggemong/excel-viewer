@@ -4,6 +4,7 @@
  */
 import type { CellStyle } from './cellStyle'
 import type { DrawingItem } from './drawingTypes'
+import type { SheetFilter } from './filter'
 
 export type { CellStyle } from './cellStyle'
 
@@ -40,6 +41,11 @@ export interface SheetModel {
   hiddenRows: boolean[]
   /** 틀고정된 행 수(화면 최상단에 항상 보이는 행). 없으면 null. 열고정은 범위 밖(D-006 계획 참고). */
   frozen: { rows: number } | null
+  /**
+   * 자동 필터(헤더 행 ▼ 버튼) — 없으면 빈 배열. 필터 조건으로 숨겨진 행은 이미 hiddenRows에
+   * 들어 있고, 여기에는 "어디에 버튼이 있고 어느 열에 조건이 걸렸는가"라는 표시 정보만 둔다.
+   */
+  filters: SheetFilter[]
   /** 시트 위에 떠 있는 그림·도형(src/xlsx/drawing.ts). 없으면 빈 배열. */
   drawings: DrawingItem[]
   /**

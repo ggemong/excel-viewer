@@ -4,8 +4,10 @@ import { interpretCellValue } from './cellValue'
 import { excelColumnWidthToPx, excelPointsToPx, measureDefaultFontWidth } from './columnWidth'
 import { readWorkbookDrawings, type SheetDrawings } from './drawing'
 import { buildAxis, requiredExtent } from './drawingLayout'
+import { autoFilterRangeText, buildSheetFilter, readAutoFilterDetails, type AutoFilterDetails } from './filter'
 import { parseTheme, type ThemeColors } from './themeColor'
 import type { CellModel, SheetModel, WorkbookModel } from './types'
+import { listSheetParts } from './workbookParts'
 import { ZipArchive } from './zipReader'
 
 // 파일이 기본 열너비/행높이(sheetFormatPr)조차 안 적었을 때만 쓰는 Excel 통상 기본값.
@@ -58,10 +60,25 @@ async function readXlsx(file: File): Promise<WorkbookModel> {
   // 이쪽이 실패해도 셀 데이터는 이미 읽혔으므로 파일 열기 자체는 막지 않고 경고로만 알린다.
   const warnings: string[] = []
   let drawingsBySheet = new Map<string, SheetDrawings>()
+  // 자동 필터의 "조건"(어느 열이 필터링 중인지)도 ExcelJS가 버리는 정보라 같은 ZIP에서 읽는다.
+  // 필터 범위 자체는 ExcelJS가 주므로, 필터가 있는 시트만 원본 XML을 연다(큰 시트 이중 해제 방지).
+  const filterDetailsBySheet = new Map<string, AutoFilterDetails | null>()
   try {
-    const result = await readWorkbookDrawings(ZipArchive.open(buffer), theme)
+    const zip = ZipArchive.open(buffer)
+    const result = await readWorkbookDrawings(zip, theme)
     drawingsBySheet = result.bySheet
     warnings.push(...result.warnings)
+
+    const sheetPaths = new Map((await listSheetParts(zip)).map((part) => [part.name, part.path]))
+    for (const ws of workbook.worksheets) {
+      const path = sheetPaths.get(ws.name)
+      if (!ws.autoFilter || ws.state !== 'visible' || !path) continue
+      try {
+        filterDetailsBySheet.set(ws.name, await readAutoFilterDetails(zip, path))
+      } catch (err) {
+        warnings.push(`"${ws.name}" 시트의 필터 조건을 읽지 못했어요: ${err instanceof Error ? err.message : String(err)}`)
+      }
+    }
   } catch (err) {
     warnings.push(`그림/도형을 읽지 못했어요: ${err instanceof Error ? err.message : String(err)}`)
   }
@@ -130,6 +147,9 @@ async function readXlsx(file: File): Promise<WorkbookModel> {
 
     const merges = worksheet.model.merges ?? []
 
+    const filterRange = autoFilterRangeText(worksheet.autoFilter)
+    const sheetFilter = filterRange ? buildSheetFilter(filterRange, filterDetailsBySheet.get(worksheet.name) ?? null) : null
+
     sheets.push({
       name: worksheet.name,
       rowCount: Math.max(rowCount, extent.rows),
@@ -141,6 +161,7 @@ async function readXlsx(file: File): Promise<WorkbookModel> {
       hiddenCols,
       hiddenRows,
       frozen,
+      filters: sheetFilter ? [sheetFilter] : [],
       drawings: drawing?.items ?? [],
       skippedDrawings: drawing?.skipped ?? {},
     })
@@ -198,6 +219,7 @@ async function readCsv(file: File): Promise<WorkbookModel> {
         hiddenCols: Array(colCount).fill(false),
         hiddenRows: Array(rowCount).fill(false),
         frozen: null,
+        filters: [],
         drawings: [],
         skippedDrawings: {},
       },

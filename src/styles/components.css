@@ -182,6 +182,7 @@
   padding-right: env(safe-area-inset-right);
 }
 .grid-cell {
+  position: relative;
   user-select: none;
   /* 행마다 높이가 다를 수 있어(파일에 저장된 실제 행높이) 고정값 대신 부모인 행
      래퍼의 높이를 그대로 채운다 — 그 래퍼의 실제 px 높이는 Grid.tsx가 매 행마다
@@ -361,4 +362,40 @@
   color: var(--text-3);
   font-size: var(--fs-xs);
   background: var(--bg-sunk);
+}
+
+/* ---------- 자동 필터 ▼ 버튼 (보기 전용 표시) ---------- */
+/* 헤더 글자가 버튼 밑으로 들어가지 않게 오른쪽 여백을 늘린다. */
+.grid-cell--filter {
+  padding-right: 24px;
+}
+.grid-filter-btn {
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  width: 15px;
+  height: 15px;
+  box-sizing: border-box;
+  border: 1px solid var(--line-strong);
+  border-radius: 2px;
+  background: var(--bg-elev);
+  pointer-events: none;
+}
+.grid-filter-btn::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -30%);
+  border-left: 3.5px solid transparent;
+  border-right: 3.5px solid transparent;
+  border-top: 5px solid var(--text-3);
+}
+/* 조건이 걸려 실제로 필터링 중인 열은 강조색으로 구분한다. */
+.grid-filter-btn[data-active="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.grid-filter-btn[data-active="true"]::after {
+  border-top-color: var(--accent);
 }
