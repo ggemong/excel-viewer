@@ -127,7 +127,7 @@ function nonMasterMergedCells(sheet: SheetModel): Set<number> {
   return covered
 }
 
-/** 도형/묶음 안의 모든 글자를 한 줄로(문단·줄바꿈은 공백). 글자가 없으면 ''. */
+/** 도형/묶음/차트 안의 모든 글자를 한 줄로(문단·줄바꿈은 공백). 글자가 없으면 ''. */
 export function drawingText(node: DrawingNode): string {
   if (node.kind === 'shape') {
     return (node.text?.paragraphs ?? [])
@@ -137,6 +137,11 @@ export function drawingText(node: DrawingNode): string {
   }
   if (node.kind === 'group') {
     return node.children.map((c) => drawingText(c.node)).filter(Boolean).join(' ')
+  }
+  if (node.kind === 'chart') {
+    // 제목·축 제목·시리즈 이름·항목 이름 — 차트에서 눈으로 읽는 글자. 값(숫자)은 셀에서 찾으므로 넣지 않는다.
+    const parts = [node.title?.text, node.categoryAxis.title?.text, node.valueAxis.title?.text, ...node.series.map((s) => s.name), ...node.categories]
+    return parts.filter((p): p is string => Boolean(p)).join(' ').replace(/\s+/g, ' ').trim()
   }
   return ''
 }

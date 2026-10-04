@@ -4,6 +4,16 @@
  */
 const KIND_LABELS: Record<string, string> = {
   chart: '차트',
+  'chart:area': '영역형 차트',
+  'chart:scatter': '분산형 차트',
+  'chart:radar': '방사형 차트',
+  'chart:bubble': '거품형 차트',
+  'chart:stock': '주식형 차트',
+  'chart:surface': '표면형 차트',
+  'chart:3d': '3차원 차트',
+  'chart:combo': '여러 종류가 섞인 차트',
+  'chart:other': '지원하지 않는 형식의 차트',
+  'chart:nodata': '저장된 값이 없는 차트',
   picture: '읽을 수 없는 그림',
   graphicFrame: '표·슬라이서 등',
 }

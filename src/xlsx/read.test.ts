@@ -266,3 +266,64 @@ describe('틀 고정', () => {
     expect(await frozenOf(null)).toBeNull()
   })
 })
+
+describe('차트 읽기(드로잉 → 차트 부품)', () => {
+  const C_NS = 'http://schemas.openxmlformats.org/drawingml/2006/chart'
+  const barChartXml = (group: string) =>
+    `<?xml version="1.0"?><c:chartSpace xmlns:c="${C_NS}" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><c:chart><c:title><c:tx><c:rich><a:p><a:r><a:t>분기별</a:t></a:r></a:p></c:rich></c:tx></c:title><c:plotArea>${group}</c:plotArea></c:chart></c:chartSpace>`
+  const bar = '<c:barChart><c:barDir val="col"/><c:grouping val="clustered"/><c:ser><c:idx val="0"/><c:order val="0"/><c:cat><c:strRef><c:f>S!$A$1</c:f><c:strCache><c:ptCount val="2"/><c:pt idx="0"><c:v>가</c:v></c:pt><c:pt idx="1"><c:v>나</c:v></c:pt></c:strCache></c:strRef></c:cat><c:val><c:numRef><c:f>S!$B$1</c:f><c:numCache><c:ptCount val="2"/><c:pt idx="0"><c:v>3</c:v></c:pt><c:pt idx="1"><c:v>7</c:v></c:pt></c:numCache></c:numRef></c:val></c:ser></c:barChart>'
+  const area = '<c:areaChart><c:ser><c:idx val="0"/><c:order val="0"/><c:val><c:numRef><c:f>S!$B$1</c:f><c:numCache><c:ptCount val="1"/><c:pt idx="0"><c:v>1</c:v></c:pt></c:numCache></c:numRef></c:val></c:ser></c:areaChart>'
+
+  async function withCharts(charts: string[]) {
+    const wb = new ExcelJS.Workbook()
+    const ws = wb.addWorksheet('S')
+    const id = wb.addImage({ buffer: PNG_1X1 as unknown as ExcelJS.Buffer, extension: 'png' })
+    ws.addImage(id, { tl: { col: 0, row: 0 }, ext: { width: 10, height: 10 } })
+    return readWorkbook(
+      await toFile(wb, async (zip) => {
+        const drawingPath = 'xl/drawings/drawing1.xml'
+        const relsPath = 'xl/drawings/_rels/drawing1.xml.rels'
+        let drawing = await zip.file(drawingPath)!.async('string')
+        let rels = await zip.file(relsPath)!.async('string')
+        charts.forEach((xml, i) => {
+          zip.file(`xl/charts/chart${i + 1}.xml`, xml)
+          rels = rels.replace('</Relationships>', `<Relationship Id="rIdChart${i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart" Target="../charts/chart${i + 1}.xml"/></Relationships>`)
+          const frame =
+            `<xdr:twoCellAnchor><xdr:from><xdr:col>1</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>${2 + i * 10}</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:from><xdr:to><xdr:col>6</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>${10 + i * 10}</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:to>` +
+            `<xdr:graphicFrame macro=""><xdr:nvGraphicFramePr><xdr:cNvPr id="${20 + i}" name="차트"/><xdr:cNvGraphicFramePr/></xdr:nvGraphicFramePr><xdr:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/></xdr:xfrm>` +
+            `<a:graphic><a:graphicData uri="${C_NS}"><c:chart xmlns:c="${C_NS}" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" r:id="rIdChart${i + 1}"/></a:graphicData></a:graphic></xdr:graphicFrame><xdr:clientData/></xdr:twoCellAnchor>`
+          drawing = drawing.replace('</xdr:wsDr>', `${frame}</xdr:wsDr>`)
+        })
+        zip.file(drawingPath, drawing)
+        zip.file(relsPath, rels)
+      }),
+    )
+  }
+
+  it('차트 부품을 따라가 모델로 읽고 앵커 위치도 갖는다', async () => {
+    const model = await withCharts([barChartXml(bar)])
+    const sheet = model.sheets[0]
+    const chart = sheet.drawings.find((d) => d.node.kind === 'chart')
+    expect(chart).toBeDefined()
+    const node = chart!.node as import('./chartTypes').ChartNode
+    expect(node).toMatchObject({ family: 'bar', categories: ['가', '나'] })
+    expect(node.title?.text).toBe('분기별')
+    expect(node.series[0].values).toEqual([3, 7])
+    expect(chart!.anchor).toMatchObject({ kind: 'twoCell', from: { col: 1, row: 2 }, to: { col: 6, row: 10 } })
+    expect(sheet.skippedDrawings).toEqual({})
+    expect(model.warnings).toEqual([])
+  })
+
+  it('못 그리는 차트는 사유별로 세어 알리고, 그릴 수 있는 차트는 그대로 읽는다', async () => {
+    const model = await withCharts([barChartXml(bar), barChartXml(area)])
+    const sheet = model.sheets[0]
+    expect(sheet.drawings.filter((d) => d.node.kind === 'chart')).toHaveLength(1)
+    expect(sheet.skippedDrawings).toEqual({ 'chart:area': 1 })
+  })
+
+  it('차트가 시트 크기를 늘린다(차트가 걸친 영역까지 빈 칸으로 이어진다)', async () => {
+    const model = await withCharts([barChartXml(bar)])
+    expect(model.sheets[0].rowCount).toBeGreaterThanOrEqual(10)
+    expect(model.sheets[0].colCount).toBeGreaterThanOrEqual(6)
+  })
+})

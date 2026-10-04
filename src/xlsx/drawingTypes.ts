@@ -6,6 +6,7 @@
  * 분리해서 들고 있다 — 실제 픽셀 위치는 열너비/행높이를 알아야 정해지므로 렌더링 시점에
  * (src/grid/drawingLayout.ts) 계산한다.
  */
+import type { ChartNode } from './chartTypes'
 
 /** 셀 안 위치. col/row는 0-based, 오프셋은 그 셀 왼쪽 위에서의 px. */
 export interface CellPoint {
@@ -94,7 +95,7 @@ export interface GroupNode extends DrawingTransform {
   children: { rel: RelativeRect; node: DrawingNode }[]
 }
 
-export type DrawingNode = PictureNode | ShapeNode | GroupNode
+export type DrawingNode = PictureNode | ShapeNode | GroupNode | ChartNode
 
 export interface DrawingItem {
   anchor: DrawingAnchor

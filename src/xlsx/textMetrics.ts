@@ -65,9 +65,20 @@ export function canvasFontOf(face: TextFace | null): string {
  * 넘치기·줄 수 판단에 쓰면 조용히 틀린다).
  */
 export function textWidth(text: string, face: TextFace | null): number | null {
+  return measureWithFont(canvasFontOf(face), text)
+}
+
+/**
+ * 칸 서식이 아닌 임의 크기(px)로 쓴 글 한 줄의 폭 — 차트의 제목·축·범례 글자처럼 칸과 따로 크기가 정해진 글을 잴 때.
+ * 글꼴 계열은 칸과 같다. 캔버스를 못 쓰면 null.
+ */
+export function textWidthAt(text: string, fontPx: number, bold = false): number | null {
+  return measureWithFont(`${bold ? '700 ' : ''}${fontPx}px ${readEnv().family}`, text)
+}
+
+function measureWithFont(font: string, text: string): number | null {
   const { ctx } = readEnv()
   if (!ctx) return null
-  const font = canvasFontOf(face)
   const key = `${font}\u0000${text}`
   const hit = widthCache.get(key)
   if (hit !== undefined) return hit

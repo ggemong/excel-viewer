@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import type { ChartNode } from '../xlsx/chartTypes'
 import type { DrawingItem, GroupNode, ShapeNode } from '../xlsx/drawingTypes'
 import type { CellModel, SheetModel } from '../xlsx/types'
 import { createMatcher, drawingText, highlightsFor, makeSnippet, MAX_HITS, searchSheet, type SearchOptions } from './searchEngine'
@@ -143,6 +144,21 @@ describe('searchSheet — 도형 글자', () => {
     const rel = { x: 0, y: 0, w: 1, h: 1 }
     const group: GroupNode = { kind: 'group', rotation: 0, flipH: false, flipV: false, children: [{ rel, node: shapeNode([['가']]) }, { rel, node: shapeNode([['나']]) }] }
     expect(drawingText(group)).toBe('가 나')
+  })
+
+  it('차트는 제목·축 제목·시리즈 이름·항목 이름을 글자로 찾는다(값은 셀에서 찾으므로 넣지 않는다)', async () => {
+    const axis = { hidden: false, title: null, formatCode: null, sizePx: 12, color: null, lineColor: null, gridlines: false, gridColor: null, min: null, max: null, majorUnit: null, reversed: false }
+    const chart: ChartNode = {
+      kind: 'chart', rotation: 0, flipH: false, flipV: false, family: 'bar', barDirection: 'col', grouping: 'clustered',
+      title: { text: '월별 매출', sizePx: 18, bold: true, color: null }, categories: ['1월', '2월'],
+      series: [{ name: '신규', values: [12345, 2], color: null, pointColors: {}, lineWidthPx: null, marker: false, smooth: false, labels: null, formatCode: null }],
+      palette: ['#000000'], legend: null, categoryAxis: axis, valueAxis: { ...axis, title: { text: '건수', sizePx: 12, bold: false, color: null } },
+      gapWidth: 150, overlap: 0, pointsOnTicks: false, holeSize: 50, firstSliceAngle: 0, blanksAs: 'gap', background: null, border: null,
+    }
+    expect(drawingText(chart)).toBe('월별 매출 건수 신규 1월 2월')
+    const r = await run(sheetOf([[cell('x')]], { drawings: [at(0, 0, chart)] }), opts('매출'))
+    expect(r.hits).toHaveLength(1)
+    expect(r.hits[0]).toMatchObject({ kind: 'shape', drawingIndex: 0 })
   })
 
   it('글자 없는 도형/그림은 찾지 않는다', async () => {

@@ -9,9 +9,10 @@
  * 경계: 이 모듈은 XML -> DrawingItem 모델 변환까지만 한다. 실제 화면 좌표 계산(열너비/행높이
  * 필요)은 src/grid/drawingLayout.ts, 그리기는 src/grid/DrawingLayer.tsx.
  *
- * 지원하지 않는 개체(차트·표·슬라이서 등 graphicFrame)는 조용히 버리지 않고 종류별 개수를
- * skipped로 돌려준다 — UI가 "표시하지 못한 개체가 있어요"라고 사용자에게 알릴 수 있게.
+ * 차트(graphicFrame)는 src/xlsx/chart.ts가 읽는다. 지원하지 않는 개체(못 그리는 차트, 표·슬라이서 등)는 조용히
+ * 버리지 않고 종류별 개수를 skipped로 돌려준다 — UI가 "표시하지 못한 개체가 있어요"라고 사용자에게 알릴 수 있게.
  */
+import { parseChartXml } from './chart'
 import { resolveDrawingColor } from './drawingColor'
 import type {
   CellPoint,
@@ -28,6 +29,7 @@ import type {
   TextRun,
 } from './drawingTypes'
 import type { ThemeColors } from './themeColor'
+import { kid, kids } from './xmlDom'
 import { dirname, listSheetParts, R_NS, readRelationships, resolveZipPath } from './workbookParts'
 import type { ZipArchive } from './zipReader'
 
@@ -58,6 +60,8 @@ export interface DrawingParseContext {
   theme: ThemeColors | null
   /** r:embed 관계 ID -> 이미 읽어 둔 그림 데이터. 모르는 ID면 undefined. */
   media: (rId: string) => MediaEntry | undefined
+  /** 차트 관계 ID -> 이미 읽어 둔 차트 XML 원문. 모르는 ID면(또는 안 주면) undefined. */
+  chart?: (rId: string) => string | undefined
 }
 
 export interface SheetDrawings {
@@ -66,15 +70,7 @@ export interface SheetDrawings {
   skipped: Record<string, number>
 }
 
-// ---------- XML 도우미 (접두사에 의존하지 않고 localName으로만 찾는다) ----------
-
-function kids(el: Element | null | undefined, name: string): Element[] {
-  return el ? Array.from(el.children).filter((c) => c.localName === name) : []
-}
-
-function kid(el: Element | null | undefined, name: string): Element | null {
-  return kids(el, name)[0] ?? null
-}
+// ---------- XML 도우미 (kid/kids는 xmlDom.ts) ----------
 
 /** `mc:AlternateContent`는 선택 가능한 내용(Choice)으로 풀어서 보여준다. */
 function contentChildren(el: Element): Element[] {
@@ -326,6 +322,29 @@ function parseGroup(el: Element, ctx: DrawingParseContext, skipped: Record<strin
   return { node: { kind: 'group', children, ...transformOf(xfrm) }, xfrm }
 }
 
+/** 차트면 ChartNode로, 아니면(표·슬라이서 등) 또는 차트를 못 그리면 종류별로 세어 건너뛴다. */
+function parseGraphicFrame(el: Element, ctx: DrawingParseContext, skipped: Record<string, number>): ParsedNode | null {
+  const data = el.getElementsByTagNameNS('*', 'graphicData')[0]
+  if (!(data?.getAttribute('uri') ?? '').endsWith('/chart')) {
+    countSkipped(skipped, 'graphicFrame')
+    return null
+  }
+  const chartRef = kid(data, 'chart')
+  const rId = chartRef?.getAttributeNS(R_NS, 'id') ?? chartRef?.getAttribute('r:id')
+  const xml = rId ? ctx.chart?.(rId) : undefined
+  if (!xml) {
+    countSkipped(skipped, 'chart')
+    return null
+  }
+  const result = parseChartXml(xml, ctx.theme)
+  if (!result.ok) {
+    countSkipped(skipped, result.reason)
+    return null
+  }
+  // 차트 상자의 위치·크기는 앵커가 정한다(graphicFrame의 xfrm은 쓰지 않는다).
+  return { node: result.node, xfrm: null }
+}
+
 function parseNode(el: Element, ctx: DrawingParseContext, skipped: Record<string, number>): ParsedNode | null {
   switch (el.localName) {
     case 'pic':
@@ -335,11 +354,8 @@ function parseNode(el: Element, ctx: DrawingParseContext, skipped: Record<string
       return parseShape(el, ctx)
     case 'grpSp':
       return parseGroup(el, ctx, skipped)
-    case 'graphicFrame': {
-      const uri = el.getElementsByTagNameNS('*', 'graphicData')[0]?.getAttribute('uri') ?? ''
-      countSkipped(skipped, uri.endsWith('/chart') ? 'chart' : 'graphicFrame')
-      return null
-    }
+    case 'graphicFrame':
+      return parseGraphicFrame(el, ctx, skipped)
     default:
       return null
   }
@@ -433,7 +449,17 @@ export async function readWorkbookDrawings(
           }),
       )
 
-      const parsed = parseDrawingXml(drawingXml, { theme, media: (id) => mediaById.get(id) })
+      const chartById = new Map<string, string>()
+      await Promise.all(
+        [...drawingRels.entries()]
+          .filter(([, r]) => r.type.endsWith('/chart'))
+          .map(async ([id, r]) => {
+            const xml = await zip.readText(resolveZipPath(dirname(drawingPath), r.target))
+            if (xml) chartById.set(id, xml)
+          }),
+      )
+
+      const parsed = parseDrawingXml(drawingXml, { theme, media: (id) => mediaById.get(id), chart: (id) => chartById.get(id) })
       if (parsed.items.length > 0 || Object.keys(parsed.skipped).length > 0) bySheet.set(name, parsed)
     } catch (err) {
       warnings.push(`"${name}" 시트의 그림/도형을 읽지 못했어요: ${err instanceof Error ? err.message : String(err)}`)

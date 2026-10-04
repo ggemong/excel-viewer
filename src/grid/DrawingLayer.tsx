@@ -1,13 +1,14 @@
 import type { CSSProperties, ReactNode } from 'react'
 import type { PlacedBox } from '../xlsx/drawingLayout'
 import type { DrawingItem, DrawingNode, DrawingTransform, PictureNode, ShapeNode, ShapeText } from '../xlsx/drawingTypes'
+import { ChartView } from './ChartView'
 import { presetPath, rectPath } from './shapeGeometry'
 
 /**
  * 시트 위에 떠 있는 그림·도형을 그린다. 셀 선택/복사를 방해하지 않도록 전부
  * pointer-events: none이고, 위치는 부모(기준 위치가 잡힌 컨테이너)에 대한 절대 좌표다.
  *
- * 한 컴포넌트에 그림/도형/묶음이 모여 있는 이유: 셋 다 "상자 하나를 회전·뒤집어서 그 안을
+ * 차트는 ChartView(SVG)가 그린다. 한 컴포넌트에 그림/도형/묶음이 모여 있는 이유: 셋 다 "상자 하나를 회전·뒤집어서 그 안을
  * 채우는" 같은 구조라 변형(transform) 처리를 한 곳에서 공유하고, 묶음이 자식을 재귀로
  * 그릴 때 같은 NodeView를 그대로 쓰기 위해서다.
  */
@@ -119,6 +120,8 @@ function NodeView({ node, width, height, urlFor }: { node: DrawingNode; width: n
       return <PictureView node={node} urlFor={urlFor} />
     case 'shape':
       return <ShapeView node={node} width={width} height={height} />
+    case 'chart':
+      return <ChartView node={node} width={width} height={height} />
     case 'group':
       return (
         <>
