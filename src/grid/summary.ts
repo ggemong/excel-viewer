@@ -14,9 +14,10 @@ export interface RangeSummary {
 /**
  * 숫자 셀(수식 결과값 포함)에 대한 합계/평균/최고/개수. range를 주면 그 범위만,
  * 안 주면 시트 전체를 본다 — 그리드에서 블록을 선택하면 그 선택 범위로, 아니면
- * 시트 전체로 자동 요약바가 전환된다.
+ * 시트 전체로 자동 요약바가 전환된다. skipRows(필터로 걸러진 행)는 Excel 상태 표시줄처럼
+ * 합계·개수·선택 칸 수에서 제외한다.
  */
-export function computeSummary(sheet: SheetModel, range?: CellRange | null): RangeSummary {
+export function computeSummary(sheet: SheetModel, range?: CellRange | null, skipRows?: boolean[]): RangeSummary {
   let sum = 0
   let max = -Infinity
   let count = 0
@@ -26,7 +27,10 @@ export function computeSummary(sheet: SheetModel, range?: CellRange | null): Ran
   const c0 = range?.c0 ?? 1
   const c1 = range?.c1 ?? sheet.colCount
 
+  let visibleRows = 0
   for (let r = r0; r <= r1; r++) {
+    if (skipRows?.[r - 1]) continue
+    visibleRows++
     const row = sheet.rows[r - 1]
     if (!row) continue
     for (let c = c0; c <= c1; c++) {
@@ -44,6 +48,6 @@ export function computeSummary(sheet: SheetModel, range?: CellRange | null): Ran
     avg: count > 0 ? sum / count : 0,
     max: count > 0 ? max : 0,
     count,
-    selectedCount: range ? (r1 - r0 + 1) * (c1 - c0 + 1) : null,
+    selectedCount: range ? visibleRows * (c1 - c0 + 1) : null,
   }
 }

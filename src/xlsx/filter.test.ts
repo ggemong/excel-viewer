@@ -36,7 +36,7 @@ describe('autoFilterRangeText / buildSheetFilter', () => {
 
   it('colId는 범위 첫 열 기준 상대값이라 절대 열 번호로 바꾼다', () => {
     const f = buildSheetFilter('C3:F20', { activeColIds: [1], hiddenButtonColIds: [3] })!
-    expect(f).toEqual({ headerRow: 3, firstCol: 3, lastCol: 6, activeCols: [4], hiddenButtonCols: [6] })
+    expect(f).toEqual({ headerRow: 3, lastRow: 20, firstCol: 3, lastCol: 6, activeCols: [4], hiddenButtonCols: [6] })
   })
 
   it('해석 못 하는 범위는 null', () => {

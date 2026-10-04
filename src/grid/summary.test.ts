@@ -41,3 +41,10 @@ describe('computeSummary', () => {
     expect(s.selectedCount).toBe(4)
   })
 })
+
+describe('computeSummary — 필터로 걸러진 행 제외', () => {
+  it('skipRows인 행은 합계·개수·선택 칸 수에서 빠진다(Excel 상태 표시줄과 동일)', () => {
+    const s = computeSummary(sheet, { r0: 1, c0: 1, r1: 2, c1: 2 }, [false, true])
+    expect(s).toMatchObject({ sum: 10, count: 1, selectedCount: 2 })
+  })
+})

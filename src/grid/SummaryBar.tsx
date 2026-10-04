@@ -7,6 +7,8 @@ import { computeSummary } from './summary'
 interface SummaryBarProps {
   sheet: SheetModel
   selection?: CellRange | null
+  /** 필터로 걸러진 행 — 요약에서 제외한다. */
+  filteredOut?: boolean[]
 }
 
 const numberFormat = new Intl.NumberFormat('ko-KR', { maximumFractionDigits: 2 })
@@ -18,8 +20,8 @@ const numberFormat = new Intl.NumberFormat('ko-KR', { maximumFractionDigits: 2 }
  * 선택했는지 감이 안 온다. 선택이 아예 없을 때만 시트 전체 기준으로
  * 돌아가고, 그때는 숫자 셀이 하나도 없으면 보여줄 게 없어 숨긴다.
  */
-export function SummaryBar({ sheet, selection }: SummaryBarProps) {
-  const summary = useMemo(() => computeSummary(sheet, selection), [sheet, selection])
+export function SummaryBar({ sheet, selection, filteredOut }: SummaryBarProps) {
+  const summary = useMemo(() => computeSummary(sheet, selection, filteredOut), [sheet, selection, filteredOut])
 
   if (summary.count === 0 && !selection) {
     return null

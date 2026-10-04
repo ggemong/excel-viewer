@@ -298,6 +298,12 @@
   background: var(--accent-soft);
   border-bottom: 1px solid var(--line);
 }
+.notice-bar--action {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
 .summary-label {
   font-size: 10.5px; font-weight: 700; letter-spacing: 0.06em;
   color: var(--text-2); text-transform: uppercase;
@@ -364,7 +370,7 @@
   background: var(--bg-sunk);
 }
 
-/* ---------- 자동 필터 ▼ 버튼 (보기 전용 표시) ---------- */
+/* ---------- 자동 필터 ▼ 버튼 (누르면 값 선택 메뉴 — FilterMenu.tsx) ---------- */
 /* 헤더 글자가 버튼 밑으로 들어가지 않게 오른쪽 여백을 늘린다. */
 .grid-cell--filter {
   padding-right: 24px;
@@ -379,7 +385,11 @@
   border: 1px solid var(--line-strong);
   border-radius: 2px;
   background: var(--bg-elev);
-  pointer-events: none;
+  padding: 0;
+  cursor: pointer;
+}
+.grid-filter-btn:hover {
+  border-color: var(--accent);
 }
 .grid-filter-btn::after {
   content: "";
@@ -398,4 +408,106 @@
 }
 .grid-filter-btn[data-active="true"]::after {
   border-top-color: var(--accent);
+}
+
+/* ---------- 필터 메뉴 (FilterMenu.tsx) ---------- */
+.filter-menu {
+  position: fixed;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  box-sizing: border-box;
+  background: var(--bg-elev);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-1);
+  font-size: var(--fs-sm);
+  color: var(--text);
+}
+/* 목록만 줄어들게 하고 나머지(제목·검색·푸터)는 눌리지 않게 한다 — 안 그러면 작은 화면에서 제목이 0높이로 사라진다. */
+.filter-menu > * {
+  flex: none;
+}
+.filter-menu__title {
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.filter-menu__search {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  color: var(--text);
+  font-size: var(--fs-sm);
+}
+.filter-menu__list {
+  flex: 1 1 auto;
+  min-height: 112px;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+}
+.filter-menu__row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 5px 8px;
+  cursor: pointer;
+}
+.filter-menu__row:hover {
+  background: var(--accent-soft);
+}
+.filter-menu__row--all {
+  border-bottom: 1px solid var(--line);
+  font-weight: 600;
+}
+.filter-menu__value {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.filter-menu__count {
+  flex: none;
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+}
+.filter-menu__empty {
+  padding: var(--sp-3);
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+  text-align: center;
+}
+.filter-menu__footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--sp-1);
+}
+.filter-menu__footer .btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+/* 좁은 화면: 앵커 옆 팝오버 대신 아래에서 올라오는 시트. */
+.filter-menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 49;
+  background: rgb(0 0 0 / 0.4);
+}
+.filter-menu--sheet {
+  left: 0;
+  right: 0;
+  bottom: 0;
+  max-height: 70vh;
+  border-radius: var(--r-md) var(--r-md) 0 0;
+  padding-bottom: calc(var(--sp-3) + env(safe-area-inset-bottom));
 }

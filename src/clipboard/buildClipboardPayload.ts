@@ -17,9 +17,14 @@ export function normalizeRange(a: { row: number; col: number }, b: { row: number
   }
 }
 
-function cellsInRange(sheet: SheetModel, range: CellRange): string[][] {
+/**
+ * @param skipRows 건너뛸 행(true인 인덱스 = r-1행). 필터로 걸러진 행을 복사에서 빼기 위한 것 —
+ * Excel도 필터된 범위를 복사하면 보이는 행만 복사한다.
+ */
+function cellsInRange(sheet: SheetModel, range: CellRange, skipRows?: boolean[]): string[][] {
   const out: string[][] = []
   for (let r = range.r0; r <= range.r1; r++) {
+    if (skipRows?.[r - 1]) continue
     const rowOut: string[] = []
     for (let c = range.c0; c <= range.c1; c++) {
       rowOut.push(formatCellValue(sheet.rows[r - 1]?.[c - 1]))
@@ -37,8 +42,8 @@ function tsvEscape(value: string): string {
   return value
 }
 
-export function buildTsv(sheet: SheetModel, range: CellRange): string {
-  return cellsInRange(sheet, range)
+export function buildTsv(sheet: SheetModel, range: CellRange, skipRows?: boolean[]): string {
+  return cellsInRange(sheet, range, skipRows)
     .map((row) => row.map(tsvEscape).join('\t'))
     .join('\n')
 }
@@ -47,8 +52,8 @@ function htmlEscape(value: string): string {
   return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
 
-export function buildHtmlTable(sheet: SheetModel, range: CellRange): string {
-  const rows = cellsInRange(sheet, range)
+export function buildHtmlTable(sheet: SheetModel, range: CellRange, skipRows?: boolean[]): string {
+  const rows = cellsInRange(sheet, range, skipRows)
     .map((row) => `<tr>${row.map((v) => `<td>${htmlEscape(v)}</td>`).join('')}</tr>`)
     .join('')
   return `<table>${rows}</table>`

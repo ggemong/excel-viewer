@@ -127,7 +127,7 @@ describe('readWorkbook (xlsx)', () => {
         zip.file(path, xml.replace('<autoFilter ref="A1:C5"/>', '<autoFilter ref="A1:C5"><filterColumn colId="1"><filters><filter val="1"/></filters></filterColumn></autoFilter>'))
       }),
     )
-    expect(model.sheets[0].filters).toEqual([{ headerRow: 1, firstCol: 1, lastCol: 3, activeCols: [2], hiddenButtonCols: [] }])
+    expect(model.sheets[0].filters).toEqual([{ headerRow: 1, lastRow: 5, firstCol: 1, lastCol: 3, activeCols: [2], hiddenButtonCols: [] }])
   })
 
   it('자동 필터가 없는 시트는 filters가 비어 있다', async () => {

@@ -57,3 +57,12 @@ describe('buildHtmlTable', () => {
     )
   })
 })
+
+describe('필터로 걸러진 행은 복사에서 제외', () => {
+  it('buildTsv / buildHtmlTable이 skipRows인 행을 건너뛴다', () => {
+    const range = { r0: 1, c0: 1, r1: 3, c1: 1 }
+    const skip = [false, true, false]
+    expect(buildTsv(sheet, range, skip)).toBe('Name\n')
+    expect(buildHtmlTable(sheet, range, skip)).toBe('<table><tr><td>Name</td></tr><tr><td></td></tr></table>')
+  })
+})

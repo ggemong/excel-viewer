@@ -13,9 +13,9 @@ const COPIED_FLASH_MS = 1500
 export function useClipboardCopy() {
   const [copied, setCopied] = useState(false)
 
-  const copyRange = useCallback(async (sheet: SheetModel, range: CellRange) => {
-    const tsv = buildTsv(sheet, range)
-    const html = buildHtmlTable(sheet, range)
+  const copyRange = useCallback(async (sheet: SheetModel, range: CellRange, skipRows?: boolean[]) => {
+    const tsv = buildTsv(sheet, range, skipRows)
+    const html = buildHtmlTable(sheet, range, skipRows)
 
     try {
       if (typeof ClipboardItem !== 'undefined') {

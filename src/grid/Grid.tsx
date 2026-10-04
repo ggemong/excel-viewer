@@ -30,6 +30,12 @@ interface GridProps {
   sheet: SheetModel
   diff?: SheetDiff | null
   onSelectionChange?: (range: CellRange | null) => void
+  /** 필터 버튼을 강조할 열(조건이 걸린 열). 안 주면 파일에 저장된 조건 열을 따른다. */
+  activeFilterCols?: Set<number>
+  /** 헤더의 ▼ 버튼을 눌렀을 때. anchor는 화면 기준 버튼 위치(메뉴를 그 옆에 띄우는 용도). */
+  onFilterButtonClick?: (col: number, anchor: DOMRect) => void
+  /** 필터로 걸러진 행 — 복사에서 제외한다. */
+  filteredOut?: boolean[]
 }
 
 function inRange(range: CellRange | null, row: number, col: number): boolean {
@@ -43,7 +49,7 @@ function inRange(range: CellRange | null, row: number, col: number): boolean {
  * 실사용 파일에서 병목은 열 수가 아니라 행 수라서, 행 가상화만으로 대용량 파일의
  * 스크롤 성능 문제를 해결한다. 열이 극단적으로 많은 시트는 이후 확장 대상.
  */
-export function Grid({ sheet, diff, onSelectionChange }: GridProps) {
+export function Grid({ sheet, diff, onSelectionChange, activeFilterCols, onFilterButtonClick, filteredOut }: GridProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const [anchor, setAnchor] = useState<{ row: number; col: number } | null>(null)
   const [focus, setFocus] = useState<{ row: number; col: number } | null>(null)
@@ -129,11 +135,12 @@ export function Grid({ sheet, diff, onSelectionChange }: GridProps) {
     for (const f of sheet.filters) {
       for (let col = f.firstCol; col <= f.lastCol; col++) {
         if (f.hiddenButtonCols.includes(col)) continue
-        map.set(`${f.headerRow},${col}`, f.activeCols.includes(col) ? 'active' : 'idle')
+        const active = activeFilterCols ? activeFilterCols.has(col) : f.activeCols.includes(col)
+        map.set(`${f.headerRow},${col}`, active ? 'active' : 'idle')
       }
     }
     return map
-  }, [sheet.filters])
+  }, [sheet.filters, activeFilterCols])
   const pictureBlobs = useMemo(() => collectPictureBlobs(sheet.drawings), [sheet.drawings])
   const urlFor = useBlobUrls(pictureBlobs)
 
@@ -219,7 +226,7 @@ export function Grid({ sheet, diff, onSelectionChange }: GridProps) {
   }
 
   const handleCopy = () => {
-    if (selection) void copyRange(sheet, selection)
+    if (selection) void copyRange(sheet, selection, filteredOut)
   }
 
   /**
@@ -332,7 +339,21 @@ export function Grid({ sheet, diff, onSelectionChange }: GridProps) {
                 ) : (
                   formatCellValue(cell)
                 )}
-                {filterState && <span className="grid-filter-btn" data-active={filterState === 'active'} aria-hidden="true" />}
+                {filterState && (
+                  <button
+                    type="button"
+                    className="grid-filter-btn"
+                    data-active={filterState === 'active'}
+                    aria-label="필터"
+                    aria-haspopup="dialog"
+                    // 칸의 드래그 선택이 시작되지 않게 막고, 눌린 위치를 메뉴 앵커로 넘긴다.
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onFilterButtonClick?.(col, e.currentTarget.getBoundingClientRect())
+                    }}
+                  />
+                )}
               </div>,
             )
 

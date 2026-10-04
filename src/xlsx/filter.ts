@@ -14,8 +14,10 @@ import { cellAddress, parseCellAddress } from './cellRef'
 import type { ZipArchive } from './zipReader'
 
 export interface SheetFilter {
-  /** 필터 버튼이 달린 헤더 행(1-based). */
+  /** 필터 버튼이 달린 헤더 행(1-based). 데이터 행은 headerRow+1 ~ lastRow. */
   headerRow: number
+  /** 필터 범위의 마지막 행(1-based). */
+  lastRow: number
   /** 필터 범위의 첫/마지막 열(1-based, 양끝 포함). */
   firstCol: number
   lastCol: number
@@ -84,6 +86,7 @@ export function buildSheetFilter(rangeText: string, details: AutoFilterDetails |
     const firstCol = Math.min(from.col, to.col)
     return {
       headerRow: Math.min(from.row, to.row),
+      lastRow: Math.max(from.row, to.row),
       firstCol,
       lastCol: Math.max(from.col, to.col),
       hiddenButtonCols: (details?.hiddenButtonColIds ?? []).map((id) => firstCol + id),
