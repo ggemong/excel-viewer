@@ -39,7 +39,11 @@ describe('아이콘 파일', () => {
     const ico = readFileSync(join(PUBLIC_DIR, 'favicon.ico'))
     // ICO 헤더: 예약 0, 종류 1(아이콘), 그리고 이미지 개수
     expect([ico.readUInt16LE(0), ico.readUInt16LE(2)]).toEqual([0, 1])
-    expect(ico.readUInt16LE(4)).toBeGreaterThanOrEqual(1)
+    const count = ico.readUInt16LE(4)
+    expect(count).toBeGreaterThanOrEqual(1)
+    // 항목마다 16바이트: 너비·높이(0이면 256)가 앞 두 바이트. 바로가기 아이콘은 큰 크기를 골라 쓰므로 48px 이상이 있어야 흐릿하지 않다.
+    const widths = Array.from({ length: count }, (_, i) => ico.readUInt8(6 + i * 16) || 256)
+    expect(Math.max(...widths)).toBeGreaterThanOrEqual(48)
     expect(iconHrefs).toContain('/favicon.ico')
   })
 })
