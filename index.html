@@ -2,8 +2,12 @@
 <html lang="ko">
   <head>
     <meta charset="UTF-8" />
+    <!-- 브라우저 탭은 SVG를, 윈도우 바로가기·작업 표시줄 고정처럼 /favicon.ico를 직접 찾는 곳은 ICO를 쓴다
+         (ICO가 없으면 서버가 앱 HTML을 대신 내줘서 기본 아이콘이 나온다). 192px는 바로가기 만들기가 큰 아이콘을 고르게 하는 용도. -->
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" href="/favicon.ico" sizes="48x48" />
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png" />
     <!-- viewport-fit=cover가 있어야 env(safe-area-inset-*)가 0이 아닌 실제 값을 돌려준다(노치 대응). -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="description" content="파일을 서버에 올리지 않고 브라우저 안에서 바로 여는 엑셀 뷰어. withvibe." />
